@@ -196,6 +196,8 @@ button, input, textarea { font-family: inherit; }
     position: sticky; top: 0; height: 100dvh;
   }
   .app-shell { padding-top: 3.5rem; padding-left: var(--space-3); padding-right: var(--space-3); }
+  /* The stage list on the left already names the section; don't say it twice. */
+  .header-status { visibility: hidden; }
 }
 
 .side-wordmark {
@@ -219,17 +221,44 @@ button, input, textarea { font-family: inherit; }
   font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.06em;
   color: var(--cream-soft); margin-top: 0.3rem;
 }
-.side-status { margin-top: 2.5rem; display: flex; flex-direction: column; gap: 1rem; }
-.side-status > div { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
-.side-status dt {
-  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--cream-faint);
+/* Stage list: tells people what's coming without ever showing a question count. */
+.stage-list { margin: 2.5rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.95rem; }
+.stage-item { display: flex; align-items: center; gap: 0.8rem; font-size: var(--fs-subtitle); color: var(--cream-faint); transition: color 0.3s; }
+.stage-mark {
+  width: 1.15rem; height: 1.15rem; flex-shrink: 0; border-radius: 999px;
+  border: 1.5px solid var(--cream-faint);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.66rem; line-height: 1;
 }
-.side-status dd {
-  font-family: var(--font-mono); font-size: var(--fs-small); color: var(--cream);
-  text-align: right;
-}
+.stage-item.current { color: var(--cream); font-weight: 600; }
+.stage-item.current .stage-mark { border-color: var(--red); background: var(--red); box-shadow: 0 0 0 4px rgba(178,58,46,0.22); }
+.stage-item.done { color: var(--cream-soft); }
+.stage-item.done .stage-mark { border-color: var(--success); background: var(--success); color: var(--paper); }
+.stage-item.done .stage-mark::after { content: "\2713"; }
 .side-footnote { font-size: var(--fs-small); color: var(--cream-faint); line-height: 1.5; margin-top: 2rem; }
+
+/* The welcome screen is a plain landing card: no stage label or progress
+   rule above it, since there's no progress to report yet. */
+body.is-welcome .app-header { display: none; }
+@media (max-width: 879px) { body.is-welcome .step-stage { justify-content: flex-start; } }
+
+.welcome-eyebrow {
+  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--red);
+  margin-bottom: -0.5rem;
+}
+.welcome-points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
+.welcome-points li { display: flex; gap: 0.65rem; align-items: flex-start; font-size: var(--fs-subtitle); color: var(--ink); line-height: 1.45; }
+.welcome-points li::before {
+  content: ""; width: 0.4rem; height: 0.4rem; margin-top: 0.5rem; flex-shrink: 0;
+  border-radius: 999px; background: var(--red);
+}
+.welcome-meta {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 0.6rem;
+  font-size: var(--fs-small); color: var(--ink-soft);
+}
+.welcome-meta span + span::before { content: "\00B7"; margin-right: 0.6rem; color: var(--ink-faint); }
+.field-hint { font-weight: 400; color: var(--ink-faint); }
 
 /* ==========================================================================
    HEADER / PROGRESS
@@ -286,6 +315,7 @@ button, input, textarea { font-family: inherit; }
 
 .step-title { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 580; line-height: 1.22; color: var(--ink); letter-spacing: -0.005em; }
 .step-subtitle { font-size: var(--fs-subtitle); color: var(--ink-soft); line-height: 1.55; }
+.slider-hint { font-size: var(--fs-small); color: var(--ink-faint); }
 
 /* ==========================================================================
    OPTION LIST (vertical, for longer or nuanced choices)
@@ -387,7 +417,25 @@ input[type="range"]::-moz-range-thumb {
 }
 .text-input:focus, .textarea-input:focus { outline: none; border-color: var(--red); }
 .text-input::placeholder, .textarea-input::placeholder { color: var(--ink-faint); }
-.textarea-input { min-height: 6rem; }
+.textarea-input { min-height: 4.75rem; }
+/* Speak-instead control for written answers: talking is far easier than
+   typing on a phone, and it's still the respondent's own words. */
+.voice-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: -0.4rem; }
+.voice-btn {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font-size: var(--fs-small); font-weight: 500; color: var(--ink-soft);
+  background: transparent; border: 1px solid var(--paper-edge);
+  border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
+  min-height: 2.25rem; white-space: nowrap; flex-shrink: 0;
+}
+.voice-btn svg { width: 0.95rem; height: 0.95rem; }
+.voice-btn.listening { color: #fff; background: var(--red); border-color: var(--red); }
+@media (prefers-reduced-motion: no-preference) {
+  .voice-btn.listening svg { animation: micPulse 1.1s ease-in-out infinite; }
+  @keyframes micPulse { 50% { opacity: 0.45; } }
+}
+.answer-hint { font-size: var(--fs-small); color: var(--ink-faint); transition: color 0.2s; }
+.answer-hint.ok { color: var(--success); }
 .field-label { font-size: var(--fs-small); color: var(--ink-soft); font-weight: 500; }
 .quick-fill-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .quick-fill-btn {
@@ -545,8 +593,8 @@ input[type="range"]::-moz-range-thumb {
 <div class="app-root">
   <aside class="side-panel" id="sidePanel">
     <div>
-      <div class="side-wordmark">IITR Exchange Desk</div>
-      <h1 class="side-headline" id="sideHeadline">Let's see where this goes.</h1>
+      <div class="side-wordmark">IIT Roorkee &middot; Student survey</div>
+      <h1 class="side-headline" id="sideHeadline">A semester abroad, honestly.</h1>
       <div class="route-graphic" aria-hidden="true">
         <svg class="route-svg" viewBox="0 0 320 24" preserveAspectRatio="none">
           <line x1="14" y1="12" x2="306" y2="12" stroke="rgba(243,236,220,0.3)" stroke-width="1.5" stroke-dasharray="3 6"/>
@@ -554,25 +602,21 @@ input[type="range"]::-moz-range-thumb {
           <circle cx="306" cy="12" r="5" fill="none" stroke="rgba(243,236,220,0.5)" stroke-width="1.5"/>
         </svg>
         <div class="route-plane" id="routePlane">&#9992;</div>
-        <div class="route-labels"><span>IITR</span><span id="routeDestLabel">?</span></div>
+        <div class="route-labels"><span>IITR</span><span id="routeDestLabel">Abroad</span></div>
       </div>
-      <dl class="side-status">
-        <div><dt>Status</dt><dd id="sideStatusValue">Check-in</dd></div>
-        <div><dt>Passenger</dt><dd id="sidePassenger">TBD</dd></div>
-        <div><dt>Progress</dt><dd id="sideProgress">Q 1</dd></div>
-      </dl>
+      <ol class="stage-list" id="stageList" aria-label="Survey sections"></ol>
     </div>
-    <p class="side-footnote">Two minutes, mostly tapping. Your answers save as you go, so closing this tab won't lose anything.</p>
+    <p class="side-footnote" id="sideFootnote">Your answers save as you go. Close the tab anytime and you'll pick up right where you left off.</p>
   </aside>
 
   <div class="app-shell">
     <div class="app-header">
       <div class="header-row">
         <button class="back-btn" id="backBtn" aria-label="Back">&#8592;</button>
-        <span class="header-status" id="headerStatus">Check-in</span>
+        <span class="header-status" id="headerStatus"></span>
         <span style="width:var(--touch-min)"></span>
       </div>
-      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:2%"></div></div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
     </div>
 
     <div id="devBanner" class="dev-banner" style="display:none"></div>
@@ -799,15 +843,26 @@ const DEPARTMENT_SUGGESTIONS = [
 const TIER0 = [
   {
     id: 'welcome', tier: 0, type: 'checkin',
-    title: 'Let’s check you in.',
-    subtitle: 'Two minutes, mostly tapping. There are no right answers here. If you’ve never heard of any of this, you’re exactly who we want to hear from.',
-    namePlaceholder: 'Name, as you’d like it on your boarding pass', primaryLabel: 'Begin check-in',
+    eyebrow: 'For every IIT Roorkee student',
+    title: 'Could you spend a semester studying abroad?',
+    subtitle: 'IITR students can spend a semester at a partner university abroad, yet very few do. We’re students finding out why, so we can make it easier.',
+    points: [
+      'Never heard of it? Then your answers matter most.',
+      'You’ll get real costs and what others said.',
+    ],
+    meta: ['About 4 minutes', 'Mostly tapping, no wrong answers'],
+    nameLabel: 'What should we call you?', namePlaceholder: 'First name', primaryLabel: 'Start',
+  },
+  {
+    id: 'q8_awareness', tier: 0, type: 'single',
+    title: 'Before today, did you know IITR students can do a semester abroad?',
+    options: ['Yes, I knew this', 'I’d heard something vaguely, but wasn’t sure it was real', 'No, this is news to me'],
   },
   {
     id: 'q10_cost_guess', tier: 0, type: 'slider',
-    title: 'What would one semester abroad cost an IITR student? Think tuition, flights, visa, rent and food. Everything.',
-    subtitle: 'Guess even if you have no idea. We’ll show you how close you were in a minute.',
-    min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'No idea, just guessing',
+    title: 'Take a guess: what does one semester abroad cost, all in?',
+    subtitle: 'Tuition, flights, visa, rent, food. Everything. A rough guess is fine.',
+    min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'I have no idea',
   },
   {
     id: 'q12_confidence', tier: 0, type: 'scale',
@@ -818,11 +873,6 @@ const TIER0 = [
     id: 'q11_cost_reasoning', tier: 0, type: 'long_text', optional: true,
     title: 'How did you land on that figure?',
     placeholder: 'Even one line about your logic helps, or skip this.',
-  },
-  {
-    id: 'q8_awareness', tier: 0, type: 'single',
-    title: 'Before today, had you heard that IITR students can spend a semester at a university abroad?',
-    options: ['Yes, I knew this', 'I’d heard something vaguely, but wasn’t sure it was real', 'No, this is news to me'],
   },
   {
     id: 'q2_programme', tier: 0, type: 'single',
@@ -836,7 +886,7 @@ const TIER0 = [
   },
   {
     id: 'q4_department', tier: 0, type: 'short_text', suggestions: DEPARTMENT_SUGGESTIONS,
-    title: 'Department or branch?', placeholder: 'Start typing, or type your own',
+    title: 'Which department or branch?', placeholder: 'Start typing to see suggestions',
   },
   {
     id: 'q5_gender', tier: 0, type: 'single', layout: 'row', optional: true,
@@ -844,8 +894,8 @@ const TIER0 = [
   },
   {
     id: 'q7_family_situation', tier: 0, type: 'single', optional: true,
-    title: 'Roughly, how would you describe your family’s situation for a large one-time education expense?',
-    subtitle: 'This helps us understand real barriers, not just interest. Skip it if you’d rather not say.',
+    title: 'If a large one-time education expense came up, how would your family manage it?',
+    subtitle: 'This helps us see the real barriers, not just interest.',
     options: [
       'We could manage it without much difficulty', 'It would be a stretch, but possible',
       'It would only be possible with a loan or scholarship', 'It would not be possible', 'Prefer not to say',
@@ -872,7 +922,7 @@ const TIER1 = [
   },
   {
     id: 'q9_name_university', tier: 1, type: 'short_text',
-    title: 'Name one university abroad you believe an IITR student can go to on exchange.',
+    title: 'Name one university abroad you think IITR students can go to on exchange.',
     quickFill: 'No idea', placeholder: 'University name, or tap "No idea"',
   },
   {
@@ -902,7 +952,7 @@ const TIER1 = [
   },
   {
     id: 'reveal_tier1', tier: 1, type: 'reveal',
-    title: 'Quick check-in.', primaryLabel: 'Continue', showUnlockBar: true,
+    title: 'Nice, the guessing part is done.', primaryLabel: 'Continue', showUnlockBar: true,
     statsFor: ['q14_cgpa_requirement', 'q16_credits_count'],
   },
   {
@@ -923,11 +973,12 @@ const BRANCH_A = [ // never applied (Q18 options 1-2)
   { id: 'q19_unlikely_reason', tier: 2, type: 'long_text',
     title: 'When you think about a semester abroad, what’s the first thing that makes it feel unlikely for you?' },
   { id: 'q20_describe_exchange_student', tier: 2, type: 'long_text',
-    title: 'Describe the kind of IITR student who does go on exchange. What are they like?' },
+    title: 'Picture an IITR student who goes on exchange. What are they like?' },
   { id: 'q21_sounds_like_you', tier: 2, type: 'scale',
     title: 'Does that description sound like you?', scaleLabels: ['not at all like me', 'that’s basically me'] },
   { id: 'q22_barriers', tier: 2, type: 'multi_chips',
-    title: 'Which of these have stopped you, if any? Tick all that apply.',
+    title: 'Which of these have held you back, if any?',
+    subtitle: 'Pick as many as you like.',
     options: [
       'The cost', 'I don’t think my CGPA is good enough', 'I don’t know how to start or where to even look',
       'It would delay my graduation', 'It would clash with placements or internships', 'Family wouldn’t be comfortable with it',
@@ -955,7 +1006,8 @@ const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
   { id: 'b_intro', tier: 2, type: 'info',
     title: 'You got further than most. We want the real story of where it broke down.', primaryLabel: 'Continue' },
   { id: 'q26_how_far', tier: 2, type: 'multi_chips',
-    title: 'How far did you get? Tick everything you actually did.',
+    title: 'How far did you get?',
+    subtitle: 'Pick everything you actually did.',
     options: [
       'Read an email or notice about it', 'Searched online or looked at partner university sites',
       'Talked to a senior or friend who’d been', 'Visited or emailed the IR office', 'Shortlisted universities',
@@ -1026,9 +1078,10 @@ const BRANCH_C = [ // went / going now (Q18 option 6)
 
 const TIER3 = [ // everyone converges here (original Section 8, "Closing")
   { id: 'q46_conversation_at_home', tier: 3, type: 'long_text',
-    title: 'Would spending a semester abroad need a conversation at home? How do you think it would go?' },
+    title: 'Would a semester abroad need a conversation with your family? How would it go?' },
   { id: 'q47_how_find_opportunities', tier: 3, type: 'multi_chips',
-    title: 'How do you actually find out about opportunities on campus? Scholarships, internships, competitions.',
+    title: 'How do you usually hear about opportunities on campus?',
+    subtitle: 'Scholarships, internships, competitions. Pick all that apply.',
     options: ['Institute email', 'Channel i', 'WhatsApp groups', 'Seniors telling me directly', 'Instagram or social media',
       'Posters and noticeboards', 'Department or faculty', 'Friends', 'I mostly find out late or not at all'] },
   { id: 'q48_missed_too_late', tier: 3, type: 'long_text', optional: true,
@@ -1046,8 +1099,8 @@ const TIER3 = [ // everyone converges here (original Section 8, "Closing")
     condition: (a) => a.q52_contact_ok === 'Yes',
     title: 'Phone or WhatsApp' },
   { id: 'email_signup', tier: 3, type: 'short_text', inputType: 'email',
-    title: 'Last thing. Where should we send the real numbers once we have them?',
-    subtitle: 'The partner list, real costs, and your boarding pass are on their way. We need your email to send them.',
+    title: 'Last one. Where should we send the results?',
+    subtitle: 'Real costs, the partner university list, and what other students said. Nothing else, no spam.',
     placeholder: 'you@iitr.ac.in' },
 ];
 
@@ -1160,21 +1213,27 @@ const backBtn = document.getElementById('backBtn');
 const headerStatus = document.getElementById('headerStatus');
 const progressFill = document.getElementById('progressFill');
 const sideHeadline = document.getElementById('sideHeadline');
-const sideStatusValue = document.getElementById('sideStatusValue');
-const sidePassenger = document.getElementById('sidePassenger');
-const sideProgress = document.getElementById('sideProgress');
+const stageList = document.getElementById('stageList');
 const routePlane = document.getElementById('routePlane');
 const routeDestLabel = document.getElementById('routeDestLabel');
 
-const TIER_LABELS = { 0: 'Check-in', 1: 'Quick check', 2: 'Your story', 3: 'Closing' };
+// Section names double as the mobile header label and the desktop stage list.
+// There is deliberately no question counter anywhere: a visible "1 / 30"
+// makes people quit before they start; a short list of named stages and a
+// progress rule tell them the same thing without the dread.
+const TIER_LABELS = { 0: 'Getting started', 1: 'What you know', 2: 'Your story', 3: 'Wrapping up' };
 const SIDE_HEADLINES = {
-  0: 'Let’s see where this goes.',
-  1: 'A few things worth checking.',
+  0: 'A semester abroad, honestly.',
+  1: 'No pressure. Guessing is fine.',
   2: { A: 'What’s actually in the way?', B: 'Where did it break down?', C: 'Tell us how it really went.' },
-  3: 'Almost at the gate.',
+  3: 'Almost done.',
 };
+// Rough length of a branch before Q18 picks one, so the progress rule
+// doesn't leap forward and then crawl once the branch is known.
+const EST_BRANCH_LENGTH = 11;
 
 backBtn.onclick = () => {
+  stopVoice();
   const prev = retreatPointer(session.pointer);
   if (prev) { session.pointer = prev; persistSession(); render(); }
 };
@@ -1185,6 +1244,7 @@ function render() {
   if (!step) { renderDebrief(); return; }
 
   session.furthestTier = Math.max(session.furthestTier, step.tier);
+  document.body.classList.toggle('is-welcome', step.type === 'checkin');
   headerStatus.textContent = TIER_LABELS[step.tier] || '';
   backBtn.classList.toggle('visible', !(session.pointer.tier === 0 && session.pointer.index === 0));
   updateProgress(step.tier);
@@ -1192,6 +1252,7 @@ function render() {
   const card = el('div', 'step-card');
   stage.innerHTML = '';
   stage.appendChild(card);
+  window.scrollTo({ top: 0 });
 
   const renderers = {
     checkin: renderCheckin, info: renderInfo, slider: renderSlider, scale: renderScale, single: renderSingle,
@@ -1202,6 +1263,7 @@ function render() {
 }
 
 function goNext() {
+  stopVoice();
   const next = advancePointer(session.pointer);
   session.pointer = next;
   persistSession();
@@ -1214,53 +1276,87 @@ function commitAndAdvance(step, value) {
 }
 
 function updateProgress(currentTier) {
-  // Rough estimate: completed steps so far / (steps so far + remaining in
-  // current tier + remaining tiers' lengths). Recomputed each render since
-  // branch length is zero until Q18 is answered.
-  const tiersOrder = [0, 1, 2, 3];
-  let totalKnown = 0, doneKnown = 0;
-  for (const t of tiersOrder) {
-    const len = listForTier(t).length;
-    totalKnown += len;
-    if (t < currentTier) doneKnown += len;
-    else if (t === currentTier) doneKnown += session.pointer.index;
+  // Rough estimate: steps behind us / all steps, using an assumed branch
+  // length until Q18 has picked one.
+  let total = 0, done = 0;
+  for (const t of [0, 1, 2, 3]) {
+    const len = (t === 2 && !session.branch) ? EST_BRANCH_LENGTH : listForTier(t).length;
+    total += len;
+    if (t < currentTier) done += len;
+    else if (t === currentTier) done += session.pointer.index;
   }
-  const pct = Math.min(96, Math.max(3, Math.round((doneKnown / Math.max(1, totalKnown)) * 100)));
+  const pct = currentTier === 0 && session.pointer.index === 0 ? 0 : Math.min(96, Math.max(4, Math.round((done / Math.max(1, total)) * 100)));
   progressFill.style.width = pct + '%';
-  routePlane.style.left = pct + '%';
-  sideProgress.textContent = `Q ${doneKnown + 1} / ${totalKnown}`;
-  sideStatusValue.textContent = TIER_LABELS[currentTier] || '';
-  sidePassenger.textContent = (session.answers.respondent_name || 'TBD').toUpperCase();
+  routePlane.style.left = Math.max(4, pct) + '%';
+  renderStageList(currentTier);
   let headline = SIDE_HEADLINES[currentTier];
   if (headline && typeof headline === 'object') headline = headline[session.branch] || 'Tell us how it really went.';
   sideHeadline.textContent = headline || sideHeadline.textContent;
 }
 
+function renderStageList(currentTier, allDone = false) {
+  stageList.innerHTML = '';
+  Object.entries(TIER_LABELS).forEach(([tier, label]) => {
+    const t = Number(tier);
+    const state = allDone || t < currentTier ? 'done' : t === currentTier ? 'current' : '';
+    const li = el('li', 'stage-item ' + state);
+    if (state === 'current') li.setAttribute('aria-current', 'step');
+    li.appendChild(el('span', 'stage-mark'));
+    li.appendChild(el('span', null, label));
+    stageList.appendChild(li);
+  });
+}
+
+/** Enter submits single-line inputs; Ctrl/Cmd+Enter submits a textarea. */
+function submitOnEnter(input, btn) {
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    if (input.tagName === 'TEXTAREA' && !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    btn.click();
+  });
+}
+
 /* ---- check-in (welcome + name) ---- */
 function renderCheckin(card, step) {
-  card.appendChild(el('div', 'step-title', step.title));
+  if (step.eyebrow) card.appendChild(el('div', 'welcome-eyebrow', step.eyebrow));
+  card.appendChild(el('h2', 'step-title', step.title));
   card.appendChild(el('div', 'step-subtitle', step.subtitle));
 
-  const label = el('label', 'field-label', 'Your name');
+  if (step.points) {
+    const ul = el('ul', 'welcome-points');
+    step.points.forEach(p => ul.appendChild(el('li', null, p)));
+    card.appendChild(ul);
+  }
+
+  // The name only personalises the result card, so it never blocks starting.
+  const label = el('label', 'field-label', step.nameLabel || 'Your name');
+  label.htmlFor = 'respondentName';
+  label.appendChild(el('span', 'field-hint', ' (optional)'));
   card.appendChild(label);
   const input = document.createElement('input');
-  input.className = 'text-input'; input.type = 'text';
-  input.placeholder = step.namePlaceholder || 'Your name';
+  input.id = 'respondentName';
+  input.className = 'text-input'; input.type = 'text'; input.autocomplete = 'given-name';
+  input.placeholder = step.namePlaceholder || '';
   input.value = session.answers.respondent_name || '';
   card.appendChild(input);
 
   const row = el('div', 'action-row');
   const btn = el('button', 'btn btn-primary btn-full', step.primaryLabel || 'Continue');
-  btn.disabled = input.value.trim().length === 0;
-  input.addEventListener('input', () => { btn.disabled = input.value.trim().length === 0; });
   btn.onclick = () => {
     const name = input.value.trim();
-    if (!name) { input.focus(); return; }
-    recordAnswer('respondent_name', name);
+    if (name) recordAnswer('respondent_name', name);
     goNext();
   };
+  submitOnEnter(input, btn);
   row.appendChild(btn);
   card.appendChild(row);
+
+  if (step.meta) {
+    const meta = el('div', 'welcome-meta');
+    step.meta.forEach(m => meta.appendChild(el('span', null, m)));
+    card.appendChild(meta);
+  }
 }
 
 /* ---- info ---- */
@@ -1280,8 +1376,12 @@ function renderSlider(card, step) {
   if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
 
   const existing = session.answers[step.id];
-  let noIdea = existing && existing.no_idea === true;
+  let noIdea = !!(existing && existing.no_idea === true);
   let value = (existing && typeof existing.value === 'number') ? existing.value : Math.round((step.max - step.min) / 2 / step.step) * step.step;
+  // The thumb has to start somewhere, but that starting point is not the
+  // respondent's guess: Continue stays off until they move it, type a
+  // number, or say they have no idea.
+  let touched = !!existing;
 
   const valueEl = el('div', 'slider-value', formatMoney(value, step.unit));
   card.appendChild(valueEl);
@@ -1289,6 +1389,9 @@ function renderSlider(card, step) {
   const input = document.createElement('input');
   input.type = 'range'; input.min = step.min; input.max = step.max; input.step = step.step; input.value = value;
   card.appendChild(input);
+
+  const hint = el('div', 'slider-hint', 'Drag the slider or type an amount.');
+  card.appendChild(hint);
 
   const exactRow = el('div', 'exact-amount-row');
   exactRow.appendChild(el('label', null, step.unit));
@@ -1302,23 +1405,29 @@ function renderSlider(card, step) {
     value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit);
     exactInput.value = value.toLocaleString('en-IN');
     if (noIdea) setNoIdea(false);
+    markTouched();
   };
   exactInput.oninput = () => {
     const digits = exactInput.value.replace(/[^\d]/g, '');
     const n = Math.min(step.max, Math.max(step.min, Number(digits) || 0));
     value = n; valueEl.textContent = formatMoney(value, step.unit); input.value = n;
     if (noIdea) setNoIdea(false);
+    markTouched();
   };
   exactInput.onblur = () => { exactInput.value = value.toLocaleString('en-IN'); };
 
   const noIdeaBtn = el('button', 'no-idea-btn' + (noIdea ? ' active' : ''), step.noIdeaLabel || 'No idea');
-  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; exactInput.style.opacity = v ? '0.4' : '1'; }
+  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; exactInput.style.opacity = v ? '0.4' : '1'; valueEl.style.opacity = (v || !touched) ? '0.35' : '1'; }
   setNoIdea(noIdea);
-  noIdeaBtn.onclick = () => setNoIdea(!noIdea);
+  noIdeaBtn.onclick = () => { setNoIdea(!noIdea); markTouched(); };
   card.appendChild(noIdeaBtn);
 
   const row = el('div', 'action-row');
   const btn = el('button', 'btn btn-primary btn-full', 'Continue');
+  btn.disabled = !touched;
+  function markTouched() { touched = true; btn.disabled = false; hint.style.visibility = 'hidden'; if (!noIdea) valueEl.style.opacity = '1'; }
+  if (touched) hint.style.visibility = 'hidden';
+  exactInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && touched) btn.click(); });
   btn.onclick = () => commitAndAdvance(step, { value: noIdea ? null : value, no_idea: noIdea });
   row.appendChild(btn);
   card.appendChild(row);
@@ -1373,7 +1482,9 @@ function renderSingle(card, step) {
     });
     card.appendChild(list);
   }
-  if (step.optional) card.appendChild(skipRow(step));
+  // Optional questions whose options already include "Prefer not to say"
+  // don't need a second, identical escape hatch underneath.
+  if (step.optional && !step.options.includes('Prefer not to say')) card.appendChild(skipRow(step));
 }
 
 /* ---- single choice built from a prior multi-select answer (Q23) ---- */
@@ -1386,10 +1497,12 @@ function renderSingleFromPrior(card, step) {
 /* ---- multi-select chips ---- */
 function renderMultiChips(card, step) {
   card.appendChild(el('div', 'step-title', step.title));
+  card.appendChild(el('div', 'step-subtitle', step.subtitle || 'Pick all that apply.'));
   const list = el('div', 'options-list');
   const existing = new Set(session.answers[step.id] || []);
   let otherText = (session.answers[step.id + '_other_text']) || '';
   let otherInput;
+  const btn = el('button', 'btn btn-primary btn-full', 'Continue');
 
   step.options.forEach(opt => {
     const card_ = el('button', 'option-card chip' + (existing.has(opt) ? ' selected' : ''));
@@ -1399,6 +1512,7 @@ function renderMultiChips(card, step) {
       if (existing.has(opt)) existing.delete(opt); else existing.add(opt);
       card_.classList.toggle('selected');
       if (opt === 'Other' && otherInput) otherInput.style.display = existing.has('Other') ? 'block' : 'none';
+      btn.disabled = existing.size === 0;
     };
     list.appendChild(card_);
   });
@@ -1413,7 +1527,7 @@ function renderMultiChips(card, step) {
   }
 
   const row = el('div', 'action-row');
-  const btn = el('button', 'btn btn-primary btn-full', 'Continue');
+  btn.disabled = existing.size === 0;
   btn.onclick = () => {
     const values = Array.from(existing);
     recordAnswer(step.id, values);
@@ -1448,6 +1562,24 @@ function renderText(card, step) {
 
   card.appendChild(input);
 
+  // Required written answers: no suggested answers (they'd put words in
+  // people's mouths), just a low bar that's easy to clear. A sentence is
+  // enough, you can say it instead of typing it, and Continue unlocks at a
+  // few real words so "idk" or "." can't slip through.
+  const isWritten = step.type === 'long_text' && !step.optional;
+  const wordCount = () => input.value.trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+  const enoughWords = () => !isWritten || wordCount() >= MIN_WRITTEN_WORDS;
+  let hintEl = null;
+  if (isWritten) {
+    input.placeholder = step.placeholder || 'Type your answer…';
+    const voiceRow = el('div', 'voice-row');
+    hintEl = el('span', 'answer-hint');
+    voiceRow.appendChild(hintEl);
+    const mic = buildVoiceButton(input, () => syncWritten());
+    if (mic) voiceRow.appendChild(mic);
+    card.appendChild(voiceRow);
+  }
+
   if (step.quickFill) {
     const qf = el('div', 'quick-fill-row');
     const b = el('button', 'quick-fill-btn', step.quickFill);
@@ -1463,20 +1595,80 @@ function renderText(card, step) {
     row.appendChild(skip);
   }
   const btn = el('button', 'btn btn-primary btn-full', 'Continue');
+  function syncWritten() {
+    if (!isWritten) return;
+    const ok = enoughWords();
+    btn.disabled = !ok;
+    hintEl.classList.toggle('ok', ok);
+    hintEl.textContent = ok ? 'That’s perfect. Add more if you like.' : wordCount() === 0 ? 'A sentence is plenty.' : 'A few more words…';
+  }
+  input.addEventListener('input', syncWritten);
+  syncWritten();
   btn.onclick = () => {
+    stopVoice();
+    if (!enoughWords()) { input.focus(); return; }
     const v = input.value.trim();
-    if (!step.optional && v.length === 0) { input.focus(); showToast('Type something, or use the quick option above.'); return; }
+    if (!step.optional && v.length === 0) { input.focus(); showToast(step.quickFill ? 'Type an answer, or tap “' + step.quickFill + '”.' : 'Even a few words helps.'); return; }
     if (step.inputType === 'email' && !isValidEmail(v)) { input.focus(); showToast('Enter a valid email so we can send you the results.'); return; }
     commitAndAdvance(step, v);
   };
+  submitOnEnter(input, btn);
   row.appendChild(btn);
   card.appendChild(row);
 }
 function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
+const MIN_WRITTEN_WORDS = 4;
+
+/* ---- voice input (Web Speech API; Chrome / Android / Safari). Returns null
+   where unsupported, so the field quietly stays type-only. ---- */
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+let activeRecognition = null;
+function stopVoice() { if (activeRecognition) { try { activeRecognition.stop(); } catch { /* already stopped */ } } }
+
+function buildVoiceButton(input, onChange) {
+  if (!SpeechRecognitionImpl) return null;
+  const btn = el('button', 'voice-btn');
+  btn.type = 'button';
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg><span>Say it instead</span>';
+  const label = btn.querySelector('span');
+  let rec = null;
+
+  btn.onclick = () => {
+    if (rec) { rec.stop(); return; }
+    stopVoice();
+    rec = new SpeechRecognitionImpl();
+    rec.lang = 'en-IN';
+    rec.continuous = true;
+    rec.interimResults = true;
+    const base = input.value.trim();
+    rec.onresult = (e) => {
+      let spoken = '';
+      for (let i = 0; i < e.results.length; i++) spoken += e.results[i][0].transcript;
+      input.value = (base ? base + ' ' : '') + spoken.trim();
+      onChange();
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') showToast('Microphone is blocked. You can type instead.');
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') showToast('Couldn’t hear that. Try again or type it.');
+    };
+    rec.onend = () => {
+      rec = null; activeRecognition = null;
+      btn.classList.remove('listening'); label.textContent = 'Say it instead';
+      onChange();
+    };
+    try {
+      rec.start();
+      activeRecognition = rec;
+      btn.classList.add('listening'); label.textContent = 'Listening… tap to stop';
+    } catch { rec = null; showToast('Couldn’t start the microphone. You can type instead.'); }
+  };
+  return btn;
+}
+
 function skipRow(step) {
   const row = el('div', 'action-row');
-  const skip = el('button', 'btn btn-ghost btn-full', 'Prefer not to say');
+  const skip = el('button', 'btn btn-ghost btn-full', 'Skip');
   skip.onclick = () => { recordAnswer(step.id, ''); goNext(); };
   row.appendChild(skip);
   return row;
@@ -1586,11 +1778,13 @@ function renderDebrief() {
   stage.innerHTML = '';
   backBtn.classList.remove('visible');
   headerStatus.textContent = 'Done';
+  document.body.classList.remove('is-welcome');
   progressFill.style.width = '100%';
-  routePlane.style.left = '98%';
-  sideStatusValue.textContent = statusForBranch();
+  routePlane.style.left = '96%';
+  renderStageList(3, true);
   routeDestLabel.textContent = statusForBranch();
-  sideHeadline.textContent = 'Boarding pass ready.';
+  sideHeadline.textContent = 'Your boarding pass is ready.';
+  document.getElementById('sideFootnote').style.visibility = 'hidden'; // "pick up where you left off" no longer applies
 
   const card = el('div', 'step-card');
 
@@ -1773,7 +1967,9 @@ async function maybeReflect(step, answerText) {
   if (session.pointer === undefined) session.pointer = { tier: 0, index: 0 };
   if (!session.branch && session.answers.q18_category) session.branch = routeBranch(session.answers.q18_category);
   flushQueue();
+  const resuming = session.pointer && !(session.pointer.tier === 0 && session.pointer.index === 0);
   render();
+  if (resuming) showToast('Welcome back. Picking up where you left off.');
 })();
 </script>
 </body>

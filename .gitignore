@@ -1,0 +1,9 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+Thumbs.db
+
+# If you ever add a local dev server / tooling later
+node_modules/
+.env
+.env.local

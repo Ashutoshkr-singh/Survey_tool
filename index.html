@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  Exchange Reality Check
+  ============================================================================
+  A self-contained rebuild of "Studying abroad for a semester — a 5-minute
+  survey" (the original Google Form) as a tap-first, chat-style, gamified
+  micro-survey. One HTML file: all markup, styles and logic live here on
+  purpose — nothing to build, no bundler, just open it or host it as-is.
+
+  WHAT CHANGED FROM THE ORIGINAL FORM, AND WHY (for whoever maintains this):
+    - Email moved from question #1 to the very end, paired with the result
+      reveal ("where should we send what we find"), instead of being the
+      first, highest-friction thing a stranger sees.
+    - The form's long "Knowledge probe" section opens with Q10 (cost guess)
+      turned into the FIRST thing anyone sees — a zero-knowledge-required
+      guess that creates a reason to keep going (the reveal), rather than
+      nine quiz-feeling questions in a row.
+    - Every question is one screen, tap-first where possible. Long free-text
+      questions stay free text (there's no substitute for someone's own
+      words) but are always skippable unless they're load-bearing for the
+      research (the Branch C "went/going" question set stays required,
+      since that group is explicitly the rarest and most useful).
+    - The branching in the live Google Form routes EVERY respondent past
+      "Section 2 (PG Specific)" by default (its "After section 1" rule
+      points straight to Section 3) — so right now, in production, PG
+      students never actually see that question. This rebuild fixes that:
+      the PG-specific question fires whenever Q2's answer is a postgraduate
+      programme, regardless of anything else.
+    - Section 4's category router (Q18) has 6 options but only 3 follow-up
+      sections existed in the form. Reading Q28's options ("I was rejected
+      or not selected", "I got selected but chose not to go") confirms the
+      intended mapping, which this rebuild makes explicit:
+        Q18 option 1 or 2 ("never seriously considered" / "thought about it,
+          never started")              -> Branch A (never applied)
+        Q18 option 3, 4 or 5 ("started but didn't finish" / "applied, not
+          selected" / "selected, didn't go")
+                                        -> Branch B (started but didn't finish)
+        Q18 option 6 ("been on exchange / on one now")
+                                        -> Branch C (went / going)
+
+  ARCHITECTURE
+    - FLOW (below) is pure data: an ordered list of "step" objects per
+      tier/branch. Adding, reordering or rewording a question is a data
+      edit, not a UI rewrite.
+    - Every answer is written the instant it's given, to THREE places in
+      parallel, each independently retried with exponential backoff:
+        1. localStorage (so a refresh/closed tab resumes exactly where you
+           left off — this is also where everything lives if Supabase
+           isn't configured yet, see CONFIG below)
+        2. Supabase `answers` table (insert-only from the browser; see
+           supabase/schema.sql for the full schema + RLS policies)
+        3. a Google Apps Script Web App that mirrors the same row into a
+           Sheet (see google-apps-script/sync.gs) — best-effort, Supabase
+           is the source of truth if the two ever disagree
+    - Live peer stats are read from a PUBLIC, PII-free aggregate view
+      (`question_stats` / `survey_progress` in schema.sql) — the browser
+      never reads back raw rows, only counts.
+
+  SETUP
+    See README.md. Short version: fill in CONFIG below with your Supabase
+    project URL/anon key and your deployed Apps Script Web App URL, then
+    host this one file anywhere static (GitHub Pages, Vercel, Netlify, or
+    just double-click it to test the flow locally in "demo mode").
+  ============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
+<title>Exchange Reality Check</title>
+<meta name="description" content="A 2-minute reality check on studying abroad for a semester — guess, compare, and tell us what actually stopped you.">
+
+<!-- Supabase JS v2 (UMD build) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- html2canvas, used only to rasterize the shareable "boarding pass" result card -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+/* ==========================================================================
+   DESIGN TOKENS
+   ========================================================================== */
+:root {
+  color-scheme: dark;
+  --bg-1: #170f29;
+  --bg-2: #2c1a4a;
+  --bg-3: #5a2a52;
+  --bg-4: #c9566b;
+  --glass-bg: rgba(255,255,255,0.07);
+  --glass-bg-strong: rgba(255,255,255,0.12);
+  --glass-border: rgba(255,255,255,0.16);
+  --glass-blur: 18px;
+  --text-primary: #fdf6f0;
+  --text-secondary: rgba(253,246,240,0.68);
+  --text-faint: rgba(253,246,240,0.45);
+  --accent: #ff8fa3;
+  --accent-strong: #ff6b8b;
+  --accent-soft: rgba(255,143,163,0.16);
+  --success: #7bd389;
+  --success-soft: rgba(123,211,137,0.16);
+  --warn: #ffcf7a;
+  --radius-lg: 1.5rem;
+  --radius-md: 1rem;
+  --radius-sm: 0.65rem;
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2.25rem;
+  --max-width: 30rem;
+  --touch-min: 2.9rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; min-height: 100vh;
+  font-family: var(--font);
+  color: var(--text-primary);
+  background: radial-gradient(ellipse 120% 80% at 50% -10%, var(--bg-3) 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+body {
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+h1, h2, h3, p { margin: 0; }
+button { font-family: inherit; }
+
+.app-shell {
+  width: 100%;
+  max-width: var(--max-width);
+  min-height: 100dvh;
+  display: flex; flex-direction: column;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  position: relative;
+}
+
+/* ==========================================================================
+   GLASS PRIMITIVES
+   ========================================================================== */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+}
+
+/* ==========================================================================
+   PROGRESS / PLANE TRACKER
+   ========================================================================== */
+.progress-wrap { padding: var(--space-1) 0 var(--space-2); }
+.progress-track {
+  position: relative;
+  height: 0.4rem;
+  background: rgba(255,255,255,0.1);
+  border-radius: 999px;
+  overflow: visible;
+}
+.progress-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
+  border-radius: 999px;
+  transition: width 0.5s var(--ease);
+}
+.progress-plane {
+  position: absolute; top: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+  font-size: 1.1rem;
+  transition: left 0.5s var(--ease);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+.progress-label {
+  display: flex; justify-content: space-between;
+  font-size: 0.72rem; color: var(--text-faint);
+  margin-top: 0.4rem; letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   TOP BAR
+   ========================================================================== */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 2.5rem;
+}
+.back-btn {
+  width: var(--touch-min); height: var(--touch-min);
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-secondary);
+  border-radius: 999px; cursor: pointer; font-size: 1.1rem;
+  transition: background 0.15s;
+  visibility: hidden;
+}
+.back-btn.visible { visibility: visible; }
+.back-btn:hover, .back-btn:active { background: rgba(255,255,255,0.08); }
+.tier-chip {
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-faint); padding: 0.3rem 0.7rem;
+  border: 1px solid var(--glass-border); border-radius: 999px;
+}
+
+/* ==========================================================================
+   STEP CARD
+   ========================================================================== */
+.step-stage {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  padding: var(--space-2) 0;
+}
+.step-card {
+  padding: var(--space-3);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  animation: stepIn 0.38s var(--ease);
+}
+.step-card.leaving { animation: stepOut 0.22s var(--ease) forwards; }
+@keyframes stepIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes stepOut {
+  to { opacity: 0; transform: translateY(-10px) scale(0.985); }
+}
+.step-eyebrow {
+  font-size: 0.74rem; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.step-title { font-size: 1.28rem; font-weight: 650; line-height: 1.35; }
+.step-subtitle { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; }
+
+/* ==========================================================================
+   OPTION CARDS (single choice)
+   ========================================================================== */
+.options-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.option-card {
+  display: flex; align-items: center; gap: 0.7rem;
+  min-height: var(--touch-min);
+  padding: 0.85rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.95rem; text-align: left; line-height: 1.4;
+  cursor: pointer; transition: all 0.15s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.option-card:active { transform: scale(0.98); }
+.option-card.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.option-dot {
+  width: 1.1rem; height: 1.1rem; flex-shrink: 0;
+  border-radius: 999px; border: 1.5px solid var(--text-faint);
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.option-card.selected .option-dot { border-color: var(--accent); background: var(--accent); }
+.option-dot::after {
+  content: ""; width: 0.5rem; height: 0.5rem; border-radius: 999px;
+  background: var(--bg-1); transform: scale(0); transition: transform 0.15s;
+}
+.option-card.selected .option-dot::after { transform: scale(1); }
+
+/* multi-select chips use square dots */
+.option-card.chip .option-dot { border-radius: 0.3rem; }
+.option-card.chip .option-dot::after { border-radius: 0.1rem; }
+
+/* ==========================================================================
+   SCALE (1-5)
+   ========================================================================== */
+.scale-row { display: flex; justify-content: space-between; gap: 0.4rem; }
+.scale-dot {
+  flex: 1; aspect-ratio: 1; max-width: 3rem;
+  border-radius: 999px; border: 1.5px solid var(--glass-border);
+  background: var(--glass-bg); color: var(--text-primary);
+  font-weight: 650; font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s var(--ease);
+}
+.scale-dot:active { transform: scale(0.92); }
+.scale-dot.selected { background: var(--accent); border-color: var(--accent); color: var(--bg-1); }
+.scale-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-faint); padding: 0 0.1rem; }
+
+/* ==========================================================================
+   SLIDER
+   ========================================================================== */
+.slider-value { font-size: 1.9rem; font-weight: 700; color: var(--accent); }
+input[type="range"] {
+  -webkit-appearance: none; width: 100%; height: 0.45rem;
+  border-radius: 999px; background: rgba(255,255,255,0.12);
+  outline: none; margin: 0.4rem 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 1.5rem; height: 1.5rem; border-radius: 999px;
+  background: var(--accent); border: 3px solid var(--bg-1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 1.5rem; height: 1.5rem; border-radius: 999px; border: 3px solid var(--bg-1);
+  background: var(--accent); cursor: pointer;
+}
+.no-idea-btn {
+  align-self: flex-start; font-size: 0.82rem; color: var(--text-secondary);
+  background: transparent; border: 1px dashed var(--glass-border);
+  border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
+}
+.no-idea-btn.active { color: var(--accent); border-color: var(--accent); border-style: solid; }
+
+/* ==========================================================================
+   TEXT INPUTS
+   ========================================================================== */
+.text-input, .textarea-input {
+  width: 100%; padding: 0.9rem 1rem;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md); color: var(--text-primary);
+  font-size: 0.95rem; font-family: inherit; line-height: 1.5;
+  resize: vertical;
+}
+.text-input:focus, .textarea-input:focus { outline: none; border-color: var(--accent); }
+.text-input::placeholder, .textarea-input::placeholder { color: var(--text-faint); }
+.textarea-input { min-height: 6rem; }
+.quick-fill-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.quick-fill-btn {
+  font-size: 0.82rem; color: var(--text-secondary);
+  background: transparent; border: 1px dashed var(--glass-border);
+  border-radius: 999px; padding: 0.4rem 0.85rem; cursor: pointer;
+}
+
+/* ==========================================================================
+   ACTION ROW
+   ========================================================================== */
+.action-row { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+.btn {
+  flex: 1; min-height: var(--touch-min);
+  border-radius: var(--radius-md); border: none;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+  transition: transform 0.12s, opacity 0.15s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: linear-gradient(135deg, var(--accent-strong), var(--accent)); color: #2a0f1c; }
+.btn-primary[disabled] { opacity: 0.35; pointer-events: none; }
+.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--glass-border); flex: 0 0 auto; padding: 0 1.1rem; }
+.btn-full { flex: 1; }
+
+/* ==========================================================================
+   INFO / WELCOME / REVEAL SCREENS
+   ========================================================================== */
+.info-icon { font-size: 2.2rem; }
+.stat-row { display: flex; flex-direction: column; gap: 0.5rem; }
+.stat-pill {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.8rem 1rem; background: var(--glass-bg-strong);
+  border-radius: var(--radius-md); font-size: 0.88rem;
+}
+.stat-pill b { color: var(--accent); font-size: 1rem; }
+.unlock-bar-wrap { margin-top: 0.2rem; }
+.unlock-bar-track {
+  height: 0.6rem; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;
+}
+.unlock-bar-fill { height: 100%; background: linear-gradient(90deg, var(--success), #a8e6af); border-radius: 999px; transition: width 0.6s var(--ease); }
+.unlock-bar-label { font-size: 0.76rem; color: var(--text-faint); margin-top: 0.35rem; }
+
+/* ==========================================================================
+   BOARDING PASS RESULT CARD
+   ========================================================================== */
+.boarding-pass {
+  background: linear-gradient(135deg, #2c1a4a 0%, #5a2a52 60%, #c9566b 100%);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.boarding-pass::before {
+  content: "✈"; position: absolute; right: -0.5rem; top: -0.5rem;
+  font-size: 6rem; opacity: 0.08; transform: rotate(35deg);
+}
+.bp-row { display: flex; justify-content: space-between; align-items: flex-start; }
+.bp-eyebrow { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+.bp-title { font-size: 1.3rem; font-weight: 700; margin-top: 0.2rem; }
+.bp-divider { border-top: 1px dashed rgba(255,255,255,0.25); margin: 1rem 0; position: relative; }
+.bp-divider::before, .bp-divider::after {
+  content: ""; position: absolute; top: -0.6rem; width: 1.2rem; height: 1.2rem;
+  background: var(--bg-1); border-radius: 999px;
+}
+.bp-divider::before { left: -1.9rem; }
+.bp-divider::after { right: -1.9rem; }
+.bp-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+.bp-stat-label { font-size: 0.68rem; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; }
+.bp-stat-value { font-size: 1.05rem; font-weight: 650; margin-top: 0.15rem; }
+
+/* ==========================================================================
+   TOAST + MODAL  (replaces window.alert / confirm entirely)
+   ========================================================================== */
+#toast-root {
+  position: fixed; left: 50%; bottom: calc(1.2rem + env(safe-area-inset-bottom, 0));
+  transform: translateX(-50%); z-index: 1000;
+  display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
+  pointer-events: none; width: 100%; max-width: var(--max-width); padding: 0 1rem;
+}
+.toast {
+  pointer-events: auto;
+  background: rgba(20,12,34,0.92); backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border); border-radius: 999px;
+  padding: 0.7rem 1.1rem; font-size: 0.85rem; color: var(--text-primary);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  animation: toastIn 0.25s var(--ease);
+  max-width: 100%;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+#modal-root {
+  position: fixed; inset: 0; z-index: 1100;
+  display: none; align-items: flex-end; justify-content: center;
+  background: rgba(10,6,18,0.55); backdrop-filter: blur(4px);
+}
+#modal-root.open { display: flex; }
+.modal-sheet {
+  width: 100%; max-width: var(--max-width);
+  background: #1d1230; border: 1px solid var(--glass-border);
+  border-radius: 1.5rem 1.5rem 0 0;
+  padding: var(--space-3) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0));
+  display: flex; flex-direction: column; gap: 0.9rem;
+  animation: sheetIn 0.28s var(--ease);
+}
+@keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-title { font-size: 1.05rem; font-weight: 650; }
+.modal-body { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; }
+.modal-actions { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+
+/* dev-mode banner shown when CONFIG isn't filled in yet */
+.dev-banner {
+  font-size: 0.74rem; text-align: center; color: var(--warn);
+  background: rgba(255,207,122,0.1); border: 1px dashed rgba(255,207,122,0.4);
+  border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; margin-bottom: 0.6rem;
+}
+
+/* reflection bubble (optional Gemini-assisted empathetic one-liner) */
+.reflection-bubble {
+  font-size: 0.85rem; color: var(--text-secondary); font-style: italic;
+  padding: 0.6rem 0.9rem; border-left: 2px solid var(--accent);
+  background: var(--glass-bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+@media (min-width: 540px) {
+  .app-shell { padding-top: var(--space-3); }
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div class="progress-wrap">
+    <div class="topbar">
+      <button class="back-btn" id="backBtn" aria-label="Back">←</button>
+      <span class="tier-chip" id="tierChip">Intro</span>
+      <span style="width:var(--touch-min)"></span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill" style="width:2%"></div>
+      <div class="progress-plane" id="progressPlane" style="left:2%">✈️</div>
+    </div>
+  </div>
+
+  <div id="devBanner" class="dev-banner" style="display:none"></div>
+
+  <div class="step-stage" id="stepStage"><!-- renderStep() injects here --></div>
+</div>
+
+<div id="toast-root"></div>
+<div id="modal-root"><div class="modal-sheet" id="modalSheet"></div></div>
+
+<script>
+'use strict';
+
+/* ============================================================================
+   1. CONFIG — fill these in before deploying. See README.md.
+   ========================================================================== */
+const CONFIG = {
+  // Supabase project → Settings → API
+  supabaseUrl: 'YOUR_SUPABASE_URL',          // e.g. 'https://xxxx.supabase.co'
+  supabaseAnonKey: 'YOUR_SUPABASE_ANON_KEY',
+
+  // google-apps-script/sync.gs, deployed as a Web App (see that file's header)
+  sheetsWebAppUrl: 'YOUR_APPS_SCRIPT_WEB_APP_URL',
+
+  // Optional: a small proxy you deploy yourself (Cloudflare Worker, Apps
+  // Script, etc.) that calls the Gemini API server-side, so the key never
+  // ships in this client-side file. Leave blank to disable reflections
+  // entirely — the survey works perfectly well without this.
+  geminiProxyUrl: '',
+  enableReflections: false,
+
+  // How many total respondents unlock the "real data" reveal (Q50's pitch).
+  unlockTarget: 150,
+
+  // Writes retry with exponential backoff: baseDelayMs * 2^attempt, capped.
+  retryBaseDelayMs: 800,
+  retryMaxAttempts: 6,
+  retryMaxDelayMs: 20000,
+};
+
+const isConfigured = {
+  supabase: CONFIG.supabaseUrl.startsWith('http') && CONFIG.supabaseAnonKey.length > 20,
+  sheets: CONFIG.sheetsWebAppUrl.startsWith('http'),
+};
+
+/* ============================================================================
+   2. UTILITIES — toasts, modals (no alert()/confirm() anywhere in this file),
+      backoff helper, small DOM helpers.
+   ========================================================================== */
+function showToast(message, ms = 2600) {
+  const root = document.getElementById('toast-root');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = message;
+  root.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .25s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 250); }, ms);
+}
+
+function showModal({ title, body, actions }) {
+  const root = document.getElementById('modal-root');
+  const sheet = document.getElementById('modalSheet');
+  sheet.innerHTML = '';
+  if (title) { const t = el('div', 'modal-title', title); sheet.appendChild(t); }
+  if (body) { const b = el('div', 'modal-body', body); sheet.appendChild(b); }
+  const row = el('div', 'modal-actions');
+  (actions || [{ label: 'Close', primary: true, onClick: closeModal }]).forEach(a => {
+    const btn = el('button', 'btn ' + (a.primary ? 'btn-primary' : 'btn-ghost'), a.label);
+    btn.onclick = () => { if (a.onClick) a.onClick(); closeModal(); };
+    row.appendChild(btn);
+  });
+  sheet.appendChild(row);
+  root.classList.add('open');
+}
+function closeModal() { document.getElementById('modal-root').classList.remove('open'); }
+document.getElementById('modal-root').addEventListener('click', (e) => { if (e.target.id === 'modal-root') closeModal(); });
+
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+/** Generic exponential-backoff retrier for any async fn that throws on failure. */
+async function withBackoff(fn, { baseDelayMs, maxAttempts, maxDelayMs } = CONFIG) {
+  let attempt = 0;
+  while (true) {
+    try { return await fn(); }
+    catch (err) {
+      attempt++;
+      if (attempt >= (maxAttempts ?? CONFIG.retryMaxAttempts)) throw err;
+      const delay = Math.min((baseDelayMs ?? CONFIG.retryBaseDelayMs) * 2 ** attempt, maxDelayMs ?? CONFIG.retryMaxDelayMs);
+      const jitter = delay * (0.75 + Math.random() * 0.5);
+      await new Promise(r => setTimeout(r, jitter));
+    }
+  }
+}
+
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+  const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16);
+}));
+
+/* ============================================================================
+   3. PERSISTENCE — localStorage session/answers + a durable write queue that
+      survives a refresh, flushed with backoff to Supabase and/or Sheets.
+   ========================================================================== */
+const LS_KEY = 'erc_session_v1';
+const LS_QUEUE_KEY = 'erc_write_queue_v1';
+
+function loadLocal() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; }
+}
+function saveLocal(data) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage full/unavailable — non-fatal */ }
+}
+function loadQueue() {
+  try { return JSON.parse(localStorage.getItem(LS_QUEUE_KEY)) || []; } catch { return []; }
+}
+function saveQueue(q) {
+  try { localStorage.setItem(LS_QUEUE_KEY, JSON.stringify(q)); } catch { /* non-fatal */ }
+}
+
+let supabaseClient = null;
+if (isConfigured.supabase && window.supabase) {
+  supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+}
+
+/** Enqueue a write (answer / session / contact) and kick off a flush attempt. */
+function queueWrite(payload) {
+  const q = loadQueue();
+  q.push({ ...payload, _queuedAt: Date.now(), _id: uuid() });
+  saveQueue(q);
+  flushQueue(); // fire and forget — failures stay queued for the next trigger
+}
+
+let flushing = false;
+async function flushQueue() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    let q = loadQueue();
+    const remaining = [];
+    for (const item of q) {
+      try {
+        await withBackoff(() => sendOne(item), { maxAttempts: 2 }); // quick attempts here; full backoff happens via periodic retry below
+      } catch {
+        remaining.push(item); // still failing — keep for later
+      }
+    }
+    saveQueue(remaining);
+  } finally {
+    flushing = false;
+  }
+}
+
+async function sendOne(item) {
+  const jobs = [];
+  if (supabaseClient) jobs.push(sendToSupabase(item));
+  if (isConfigured.sheets) jobs.push(sendToSheets(item));
+  if (jobs.length === 0) return; // demo mode: localStorage only, nothing to send
+  // Both destinations are best-effort and independent — one failing
+  // shouldn't block the other, so we await both and only re-throw if
+  // BOTH failed (meaning the item truly needs to stay queued).
+  const results = await Promise.allSettled(jobs);
+  if (results.every(r => r.status === 'rejected')) {
+    throw results[0].reason;
+  }
+}
+
+async function sendToSupabase(item) {
+  if (item.kind === 'session') {
+    const { error } = await supabaseClient.from('sessions').upsert({
+      id: item.session_id, programme: item.programme, year: item.year,
+      department: item.department, is_pg: item.is_pg, branch: item.branch,
+      user_agent: item.user_agent, furthest_tier: item.furthest_tier,
+      completed_at: item.completed_at || null,
+    }, { onConflict: 'id' });
+    if (error) throw error;
+  } else if (item.kind === 'answer') {
+    const { error } = await supabaseClient.from('answers').upsert({
+      session_id: item.session_id, question_id: item.question_id, value: item.value,
+    }, { onConflict: 'session_id,question_id' });
+    if (error) throw error;
+  } else if (item.kind === 'contact') {
+    const { error } = await supabaseClient.from('contacts').upsert({
+      session_id: item.session_id, email: item.email, phone_whatsapp: item.phone_whatsapp,
+      ok_followup_contact: item.ok_followup_contact, ok_junior_contact: item.ok_junior_contact,
+      ok_interview_contact: item.ok_interview_contact,
+    }, { onConflict: 'session_id' });
+    if (error) throw error;
+  }
+}
+
+async function sendToSheets(item) {
+  const res = await fetch(CONFIG.sheetsWebAppUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight against Apps Script
+    body: JSON.stringify({ ...item, created_at: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error('Sheets sync HTTP ' + res.status);
+}
+
+// Retry whatever's left in the queue periodically and whenever we come back online.
+setInterval(flushQueue, 15000);
+window.addEventListener('online', flushQueue);
+
+/* ============================================================================
+   4. FLOW DATA — every question, as data. See the header comment for how
+      the branching maps back to the original Google Form's sections.
+   ========================================================================== */
+
+const PROGRAMMES_UG = ['B.Tech.', 'B.Arch.', 'Integrated M.Tech. / Integrated M.Sc. (5-year)'];
+const PROGRAMMES_PG = ['M.Tech.', 'M.Sc. (2-year)', 'MBA', 'M.Des. / other Master’s', 'Ph.D.'];
+
+const TIER0 = [
+  {
+    id: 'welcome', tier: 0, type: 'info',
+    eyebrow: 'Exchange Reality Check', title: 'Quick guess before anything else.',
+    subtitle: 'Two minutes, mostly tapping. No right answers — if you’ve never heard of any of this, you’re exactly who we want to hear from.',
+    icon: '✈️', primaryLabel: 'Start',
+  },
+  {
+    id: 'q10_cost_guess', tier: 0, type: 'slider',
+    title: 'What would one semester abroad cost an IITR student — tuition, flights, visa, rent, food, everything?',
+    subtitle: 'Guess even if you have no idea. We’ll show you how close you were in a minute.',
+    min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'No idea — just guessing',
+  },
+  {
+    id: 'q12_confidence', tier: 0, type: 'scale',
+    title: 'How confident are you in that number?',
+    scaleLabels: ['pure guess', 'I know this fairly precisely'],
+  },
+  {
+    id: 'q11_cost_reasoning', tier: 0, type: 'long_text', optional: true,
+    title: 'How did you land on that figure?',
+    placeholder: 'Even one line about your logic helps — or skip this.',
+  },
+  {
+    id: 'q8_awareness', tier: 0, type: 'single',
+    title: 'Before today, had you heard that IITR students can spend a semester at a university abroad?',
+    options: ['Yes, I knew this', 'I’d heard something vaguely, but wasn’t sure it was real', 'No, this is news to me'],
+  },
+  {
+    id: 'q2_programme', tier: 0, type: 'single',
+    title: 'Which programme are you in?',
+    options: [...PROGRAMMES_UG, ...PROGRAMMES_PG],
+  },
+  {
+    id: 'q3_year', tier: 0, type: 'single',
+    title: 'Which year of that programme are you currently in?',
+    options: ['1st', '2nd', '3rd', '4th', '5th', '6th'],
+  },
+  {
+    id: 'q4_department', tier: 0, type: 'short_text',
+    title: 'Department / branch?', placeholder: 'e.g. Production & Industrial Engineering',
+  },
+  {
+    id: 'q5_gender', tier: 0, type: 'single', optional: true,
+    title: 'Gender', options: ['Female', 'Male', 'Prefer not to say'],
+  },
+  {
+    id: 'q7_family_situation', tier: 0, type: 'single', optional: true,
+    title: 'Roughly, how would you describe your family’s situation for a large one-time education expense?',
+    subtitle: 'This helps us understand real barriers, not just interest. Skip it if you’d rather not say.',
+    options: [
+      'We could manage it without much difficulty', 'It would be a stretch, but possible',
+      'It would only be possible with a loan or scholarship', 'It would not be possible', 'Prefer not to say',
+    ],
+  },
+  {
+    id: 'reveal_tier0', tier: 0, type: 'reveal',
+    title: 'Here’s how that compares.', primaryLabel: 'Keep going',
+    statsFor: ['q10_cost_guess', 'q8_awareness'],
+  },
+];
+
+const TIER1 = [
+  {
+    id: 'q2pg_availability', tier: 1, type: 'single',
+    condition: (a) => a.is_pg,
+    title: 'As a postgraduate student, do you believe a semester or research stay abroad is available to you, or is it a UG-only thing?',
+    options: ['Available to PG students too', 'I think it’s UG-only', 'No idea', 'I know PG has a different route'],
+  },
+  {
+    id: 'q2pg_detail', tier: 1, type: 'short_text',
+    condition: (a) => a.is_pg && a.q2pg_availability === 'I know PG has a different route',
+    title: 'What do you know about that different route?', placeholder: 'Whatever you know, roughly.',
+  },
+  {
+    id: 'q9_name_university', tier: 1, type: 'short_text',
+    title: 'Name one university abroad you believe an IITR student can go to on exchange.',
+    quickFill: 'No idea', placeholder: 'University name, or tap "No idea"',
+  },
+  {
+    id: 'q13_who_handles', tier: 1, type: 'short_text',
+    title: 'Who at IITR handles this — which office, or which person?',
+    quickFill: 'Don’t know', placeholder: 'Office or name, or tap "Don’t know"',
+  },
+  {
+    id: 'q14_cgpa_requirement', tier: 1, type: 'single',
+    title: 'Is there a minimum CGPA requirement to apply?',
+    options: ['Yes, and I know roughly what it is', 'Yes, there’s definitely a cutoff, but I don’t know what', 'I don’t think there is one', 'No idea'],
+  },
+  {
+    id: 'q14_detail', tier: 1, type: 'short_text',
+    condition: (a) => a.q14_cgpa_requirement === 'Yes, and I know roughly what it is',
+    title: 'What’s the cutoff, roughly?', placeholder: 'e.g. 7.0 CGPA',
+  },
+  {
+    id: 'q15_application_window', tier: 1, type: 'multi_chips',
+    title: 'Roughly what time of year do applications open?',
+    options: ['Jan–Mar', 'Apr–Jun', 'Jul–Sep', 'Oct–Dec', 'No idea'],
+  },
+  {
+    id: 'q16_credits_count', tier: 1, type: 'single',
+    title: 'Do the credits you earn abroad count toward your IITR degree?',
+    options: ['Yes, all of them', 'Yes, some of them', 'No', 'No idea'],
+  },
+  {
+    id: 'reveal_tier1', tier: 1, type: 'reveal',
+    title: 'Quick check-in.', primaryLabel: 'Continue', showUnlockBar: true,
+    statsFor: ['q14_cgpa_requirement', 'q16_credits_count'],
+  },
+  {
+    id: 'q18_category', tier: 1, type: 'single',
+    title: 'Which of these is closest to your own situation?',
+    options: [
+      'I’ve never seriously considered applying',
+      'I thought about it but never started an application',
+      'I started an application or the process, but didn’t complete it',
+      'I applied and wasn’t selected',
+      'I applied, was selected, but didn’t go',
+      'I have been on exchange, or I’m on one right now',
+    ],
+  },
+];
+
+const BRANCH_A = [ // never applied (Q18 options 1-2)
+  { id: 'q19_unlikely_reason', tier: 2, type: 'long_text',
+    title: 'When you think about a semester abroad, what’s the first thing that makes it feel unlikely for you?' },
+  { id: 'q20_describe_exchange_student', tier: 2, type: 'long_text',
+    title: 'Describe the kind of IITR student who does go on exchange. What are they like?' },
+  { id: 'q21_sounds_like_you', tier: 2, type: 'scale',
+    title: 'Does that description sound like you?', scaleLabels: ['not at all like me', 'that’s basically me'] },
+  { id: 'q22_barriers', tier: 2, type: 'multi_chips',
+    title: 'Which of these have stopped you, if any? Tick all that apply.',
+    options: [
+      'The cost', 'I don’t think my CGPA is good enough', 'I don’t know how to start / where to even look',
+      'It would delay my graduation', 'It would clash with placements or internships', 'Family wouldn’t be comfortable with it',
+      'I’d fall behind my batch in coursework', 'I’m not confident about language or living alone abroad',
+      'I don’t know anyone who’s done it', 'I assumed I wasn’t eligible', 'I just never thought about it',
+      'Nothing has stopped me — I still might apply', 'Other',
+    ], allowOtherText: true },
+  { id: 'q23_biggest_barrier', tier: 2, type: 'single_from_prior', sourceQuestion: 'q22_barriers',
+    title: 'Of everything you ticked, which single one is the biggest?' },
+  { id: 'q24_if_removed', tier: 2, type: 'single',
+    title: 'If that one thing were completely removed — imagine it simply doesn’t apply to you — would you apply?',
+    options: ['Yes, I’d apply', 'Probably, but something else would still be in the way', 'No, I still wouldn’t'] },
+  { id: 'q24_detail_probably', tier: 2, type: 'short_text',
+    condition: (a) => a.q24_if_removed === 'Probably, but something else would still be in the way',
+    title: 'What would that something else be?' },
+  { id: 'q24_detail_no', tier: 2, type: 'short_text',
+    condition: (a) => a.q24_if_removed === 'No, I still wouldn’t',
+    title: 'Why not?' },
+  { id: 'q25_suggested_by_someone', tier: 2, type: 'single',
+    title: 'Has a senior, friend or professor ever personally suggested you should apply?',
+    options: ['Yes', 'No', 'I’ve heard people discuss it, but never directed at me'] },
+];
+
+const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
+  { id: 'b_intro', tier: 2, type: 'info',
+    title: 'You got further than most. We want the real story of where it broke down.', primaryLabel: 'Continue' },
+  { id: 'q26_how_far', tier: 2, type: 'multi_chips',
+    title: 'How far did you get? Tick everything you actually did.',
+    options: [
+      'Read an email or notice about it', 'Searched online / looked at partner university sites',
+      'Talked to a senior or friend who’d been', 'Visited or emailed the IR office', 'Shortlisted universities',
+      'Tried to map courses / check credit transfer', 'Spoke to my department or DAPC', 'Started filling the application',
+      'Arranged documents (transcripts, LOR, SOP)', 'Applied for funding or a scholarship', 'Submitted the application',
+    ] },
+  { id: 'q27_moment_stopped', tier: 2, type: 'long_text',
+    title: 'What was the moment you stopped? Describe what was actually happening.' },
+  { id: 'q28_decision_or_fade', tier: 2, type: 'single',
+    title: 'Was it a decision, or did it just fade?',
+    options: ['I made a decision not to continue', 'It just faded — I got busy and it slipped', 'I missed a deadline', 'I was rejected or not selected', 'I got selected but chose not to go'] },
+  { id: 'q29_biggest_blocker', tier: 2, type: 'single',
+    title: 'What was the single biggest blocker?',
+    options: ['Cost / funding', 'Course mapping or credit transfer', 'Departmental / DAPC approval', 'Missing or unclear information',
+      'Deadline passed', 'CGPA or eligibility', 'Placement or internship clash', 'Family', 'Visa or paperwork', 'Changed my mind about wanting to go', 'Other'] },
+  { id: 'q29_detail_other', tier: 2, type: 'short_text', condition: (a) => a.q29_biggest_blocker === 'Other',
+    title: 'What was it?' },
+  { id: 'q30_hard_wall', tier: 2, type: 'single',
+    title: 'Was that blocker a hard wall, or something you might have got past with better information or help?',
+    options: ['Hard wall — nothing would have changed it', 'Better information would probably have got me through',
+      'Help from a person who’d done it would have got me through', 'Both of the above', 'Not sure'] },
+  { id: 'q31_info_search', tier: 2, type: 'multi_chips',
+    title: 'When you looked for information, what happened?',
+    options: ['I found what I needed and trusted it', 'I found information but wasn’t sure it was current', 'I found contradictory answers',
+      'I couldn’t find it at all', 'I found it but only after it was too late', 'I didn’t know where to look', 'I got an answer from a person, not a document'] },
+  { id: 'q32_wrong_belief', tier: 2, type: 'long_text', optional: true,
+    title: 'Was there anything you believed at the time that turned out to be wrong?' },
+  { id: 'q33_would_have_gone', tier: 2, type: 'scale',
+    title: 'Would you have gone if the process had been clearer?', scaleLabels: ['no', 'definitely'] },
+  { id: 'q34_willing_to_talk', tier: 2, type: 'single',
+    title: 'Would you be willing to talk to us for 20 minutes about what happened?', options: ['Yes', 'No'] },
+  { id: 'q34_contact', tier: 2, type: 'short_text', condition: (a) => a.q34_willing_to_talk === 'Yes',
+    title: 'Phone or WhatsApp number', placeholder: 'So we can reach out' },
+];
+
+const BRANCH_C = [ // went / going now (Q18 option 6)
+  { id: 'c_intro', tier: 2, type: 'info',
+    title: 'You’re the rarest and most useful group answering this — thank you.',
+    subtitle: 'A few of these ask for numbers; rough is completely fine.', primaryLabel: 'Continue' },
+  { id: 'q35_university_country_term', tier: 2, type: 'short_text',
+    title: 'Which university, which country, and which semester/year?' },
+  { id: 'q36_total_cost', tier: 2, type: 'short_text',
+    title: 'Roughly what did the whole thing cost you, all in, in rupees?' },
+  { id: 'q37_cost_breakdown', tier: 2, type: 'long_text',
+    title: 'Break that down as best you can — tuition, flights, visa, insurance, rent, food, local transport, setup, travel.' },
+  { id: 'q38_blindsided_cost', tier: 2, type: 'long_text', optional: true,
+    title: 'What cost blindsided you — something you hadn’t budgeted for?' },
+  { id: 'q39_funding', tier: 2, type: 'multi_chips',
+    title: 'How did you fund it?',
+    options: ['Family', 'Scholarship from the host university', 'Indian government / institute scholarship', 'Education loan',
+      'Savings or personal earnings', 'Fee waiver from the host', 'Other'], allowOtherText: true },
+  { id: 'q40_mapping_experience', tier: 2, type: 'single',
+    title: 'How did course mapping and credit transfer actually go?',
+    options: ['Smooth — everything mapped', 'Mostly fine, with some back and forth', 'Difficult — I lost credits or had to repeat something', 'Still unresolved', 'N/A'] },
+  { id: 'q41_mapping_story', tier: 2, type: 'long_text',
+    title: 'Tell us what actually happened with mapping and your department/DAPC — the part nobody warns you about.' },
+  { id: 'q42_wish_known', tier: 2, type: 'long_text',
+    title: 'What’s one thing you wish you’d known before you left?' },
+  { id: 'q43_how_found_out', tier: 2, type: 'short_text',
+    title: 'How did you first find out exchange was even possible?' },
+  { id: 'q44_would_redo', tier: 2, type: 'scale',
+    title: 'Would you do it again?', scaleLabels: ['no', 'absolutely'] },
+  { id: 'q45_junior_contact', tier: 2, type: 'single',
+    title: 'Would you let juniors contact you with questions?', options: ['Yes, happy to', 'Yes, but only over email', 'No'] },
+  { id: 'q45_contact_detail', tier: 2, type: 'short_text', condition: (a) => a.q45_junior_contact === 'Yes, happy to',
+    title: 'Phone / WhatsApp / email', placeholder: 'However juniors should reach you' },
+];
+
+const TIER3 = [ // everyone converges here (original Section 8, "Closing")
+  { id: 'q46_conversation_at_home', tier: 3, type: 'long_text',
+    title: 'Would spending a semester abroad need a conversation at home? How do you think it would go?' },
+  { id: 'q47_how_find_opportunities', tier: 3, type: 'multi_chips',
+    title: 'How do you actually find out about opportunities on campus — scholarships, internships, competitions?',
+    options: ['Institute email', 'Channel i', 'WhatsApp groups', 'Seniors telling me directly', 'Instagram / social media',
+      'Posters and noticeboards', 'Department or faculty', 'Friends', 'I mostly find out late or not at all'] },
+  { id: 'q48_missed_too_late', tier: 3, type: 'long_text', optional: true,
+    title: 'Have you missed something this year that you’d have wanted, purely because you found out too late?' },
+  { id: 'q49_apply_if', tier: 3, type: 'long_text',
+    title: 'What would have to be true for you to seriously apply? Finish the sentence: "I’d apply if…"' },
+  { id: 'q50_single_page_usefulness', tier: 3, type: 'scale',
+    title: 'If a single page existed with everything at one place — real costs, real universities, real deadlines, and students you could ask — how useful would that be to you?',
+    scaleLabels: ['not useful', 'I’d use it today'] },
+  { id: 'q51_anything_else', tier: 3, type: 'long_text', optional: true,
+    title: 'Anything else you want to say about this?' },
+  { id: 'q52_contact_ok', tier: 3, type: 'single',
+    title: 'Can we contact you if we have follow-up questions?', options: ['Yes', 'Yes, email is fine', 'No thanks'] },
+  { id: 'q52_contact_detail', tier: 3, type: 'short_text', condition: (a) => a.q52_contact_ok === 'Yes',
+    title: 'Phone or WhatsApp' },
+  { id: 'email_signup', tier: 3, type: 'short_text', inputType: 'email',
+    title: 'Last thing — where should we send the real numbers once we have them?',
+    subtitle: 'The partner list, real costs, and your boarding pass below.', placeholder: 'you@iitr.ac.in', optional: true },
+];
+
+/* ============================================================================
+   5. STATE
+   ========================================================================== */
+let session = loadLocal() || {
+  session_id: uuid(), createdAt: Date.now(), answers: {}, branch: null,
+  furthestTier: 0, pointer: { tier: 0, index: 0 }, completed: false,
+};
+
+function persistSession() {
+  saveLocal(session);
+}
+
+function recordAnswer(questionId, value) {
+  session.answers[questionId] = value;
+  persistSession();
+  queueWrite({ kind: 'answer', session_id: session.session_id, question_id: questionId, value });
+
+  // Keep the session row's denormalized fields current for easy filtering.
+  if (['q2_programme', 'q3_year', 'q4_department'].includes(questionId) || questionId === 'q18_category') {
+    if (questionId === 'q2_programme') session.answers.is_pg = PROGRAMMES_PG.includes(value);
+    if (questionId === 'q18_category') session.branch = routeBranch(value);
+    pushSessionSnapshot();
+  }
+}
+
+function pushSessionSnapshot() {
+  queueWrite({
+    kind: 'session', session_id: session.session_id,
+    programme: session.answers.q2_programme, year: session.answers.q3_year,
+    department: session.answers.q4_department, is_pg: !!session.answers.is_pg,
+    branch: session.branch, user_agent: navigator.userAgent,
+    furthest_tier: session.furthestTier, completed_at: session.completed ? new Date().toISOString() : null,
+  });
+}
+
+function routeBranch(q18answer) {
+  const idx = TIER1.find(s => s.id === 'q18_category').options.indexOf(q18answer);
+  if (idx === 0 || idx === 1) return 'A';
+  if (idx === 2 || idx === 3 || idx === 4) return 'B';
+  if (idx === 5) return 'C';
+  return null;
+}
+
+/* ============================================================================
+   6. ROUTER — walks TIER0 -> TIER1 -> (branch A/B/C) -> TIER3 -> debrief,
+      skipping any step whose condition() fails.
+   ========================================================================== */
+function branchList() {
+  return session.branch === 'A' ? BRANCH_A : session.branch === 'B' ? BRANCH_B : session.branch === 'C' ? BRANCH_C : [];
+}
+
+function listForTier(tier) {
+  if (tier === 0) return TIER0;
+  if (tier === 1) return TIER1;
+  if (tier === 2) return branchList();
+  if (tier === 3) return TIER3;
+  return [];
+}
+
+function stepAt(tier, index) {
+  const list = listForTier(tier);
+  return list[index] || null;
+}
+
+/** Finds the next visible step after {tier, index}, walking forward through tiers as lists end. */
+function advancePointer(from) {
+  let { tier, index } = from;
+  index++;
+  while (true) {
+    const list = listForTier(tier);
+    if (index < list.length) {
+      const step = list[index];
+      if (!step.condition || step.condition(session.answers)) return { tier, index };
+      index++;
+      continue;
+    }
+    // list exhausted -> move to next tier
+    if (tier === 0) { tier = 1; index = 0; continue; }
+    if (tier === 1) { tier = 2; index = 0; if (branchList().length === 0) { tier = 3; index = 0; } continue; }
+    if (tier === 2) { tier = 3; index = 0; continue; }
+    if (tier === 3) return null; // -> debrief
+  }
+}
+
+function retreatPointer(from) {
+  let { tier, index } = from;
+  index--;
+  while (true) {
+    if (index >= 0) {
+      const step = stepAt(tier, index);
+      if (step && (!step.condition || step.condition(session.answers))) return { tier, index };
+      index--;
+      continue;
+    }
+    if (tier === 3) { tier = 2; index = listForTier(2).length - 1; if (index < 0) { tier = 1; index = listForTier(1).length - 1; } continue; }
+    if (tier === 2) { tier = 1; index = listForTier(1).length - 1; continue; }
+    if (tier === 1) { tier = 0; index = listForTier(0).length - 1; continue; }
+    return null; // already at the very first step
+  }
+}
+
+/* ============================================================================
+   7. RENDERER
+   ========================================================================== */
+const stage = document.getElementById('stepStage');
+const backBtn = document.getElementById('backBtn');
+const tierChip = document.getElementById('tierChip');
+const progressFill = document.getElementById('progressFill');
+const progressPlane = document.getElementById('progressPlane');
+
+const TIER_LABELS = { 0: 'Intro', 1: 'Quick check', 2: 'Your story', 3: 'Closing' };
+
+backBtn.onclick = () => {
+  const prev = retreatPointer(session.pointer);
+  if (prev) { session.pointer = prev; persistSession(); render(); }
+};
+
+function render() {
+  if (!session.pointer) { renderDebrief(); return; }
+  const step = stepAt(session.pointer.tier, session.pointer.index);
+  if (!step) { renderDebrief(); return; }
+
+  session.furthestTier = Math.max(session.furthestTier, step.tier);
+  tierChip.textContent = TIER_LABELS[step.tier] || '';
+  backBtn.classList.toggle('visible', !(session.pointer.tier === 0 && session.pointer.index === 0));
+  updateProgress(step.tier);
+
+  const card = el('div', 'step-card');
+  stage.innerHTML = '';
+  stage.appendChild(card);
+
+  const renderers = {
+    info: renderInfo, slider: renderSlider, scale: renderScale, single: renderSingle,
+    multi_chips: renderMultiChips, short_text: renderText, long_text: renderText,
+    reveal: renderReveal, single_from_prior: renderSingleFromPrior,
+  };
+  (renderers[step.type] || renderInfo)(card, step);
+}
+
+function goNext() {
+  const next = advancePointer(session.pointer);
+  session.pointer = next;
+  persistSession();
+  render();
+}
+
+function commitAndAdvance(step, value) {
+  if (value !== undefined) recordAnswer(step.id, value);
+  goNext();
+}
+
+function updateProgress(currentTier) {
+  // Rough estimate: completed steps so far / (steps so far + remaining in current tier
+  // + remaining tiers' lengths). Recomputed each render since branch length varies.
+  const tiersOrder = [0, 1, 2, 3];
+  let totalKnown = 0, doneKnown = 0;
+  for (const t of tiersOrder) {
+    const len = listForTier(t).length;
+    totalKnown += len;
+    if (t < currentTier) doneKnown += len;
+    else if (t === currentTier) doneKnown += session.pointer.index;
+  }
+  const pct = Math.min(96, Math.max(4, Math.round((doneKnown / Math.max(1, totalKnown)) * 100)));
+  progressFill.style.width = pct + '%';
+  progressPlane.style.left = pct + '%';
+}
+
+/* ---- info / welcome ---- */
+function renderInfo(card, step) {
+  if (step.icon) card.appendChild(el('div', 'info-icon', step.icon));
+  if (step.eyebrow) card.appendChild(el('div', 'step-eyebrow', step.eyebrow));
+  card.appendChild(el('div', 'step-title', step.title));
+  if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
+  const row = el('div', 'action-row');
+  const btn = el('button', 'btn btn-primary', step.primaryLabel || 'Continue');
+  btn.onclick = () => commitAndAdvance(step, undefined);
+  row.appendChild(btn);
+  card.appendChild(row);
+}
+
+/* ---- slider (Q10) ---- */
+function renderSlider(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
+
+  const existing = session.answers[step.id];
+  let noIdea = existing && existing.no_idea === true;
+  let value = (existing && typeof existing.value === 'number') ? existing.value : Math.round((step.max - step.min) / 2 / step.step) * step.step;
+
+  const valueEl = el('div', 'slider-value', formatMoney(value, step.unit));
+  card.appendChild(valueEl);
+
+  const input = document.createElement('input');
+  input.type = 'range'; input.min = step.min; input.max = step.max; input.step = step.step; input.value = value;
+  input.oninput = () => { value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit); if (noIdea) setNoIdea(false); };
+  card.appendChild(input);
+
+  const noIdeaBtn = el('button', 'no-idea-btn' + (noIdea ? ' active' : ''), step.noIdeaLabel || 'No idea');
+  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; }
+  setNoIdea(noIdea);
+  noIdeaBtn.onclick = () => setNoIdea(!noIdea);
+  card.appendChild(noIdeaBtn);
+
+  const row = el('div', 'action-row');
+  const btn = el('button', 'btn btn-primary', 'Continue');
+  btn.onclick = () => commitAndAdvance(step, { value: noIdea ? null : value, no_idea: noIdea });
+  row.appendChild(btn);
+  card.appendChild(row);
+}
+function formatMoney(n, unit) { return unit + Number(n).toLocaleString('en-IN'); }
+
+/* ---- scale (1-5) ---- */
+function renderScale(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  const row = el('div', 'scale-row');
+  const existing = session.answers[step.id];
+  for (let i = 1; i <= 5; i++) {
+    const dot = el('button', 'scale-dot' + (existing === i ? ' selected' : ''), String(i));
+    dot.onclick = () => { highlightThen(dot, row, '.scale-dot', () => commitAndAdvance(step, i)); };
+    row.appendChild(dot);
+  }
+  card.appendChild(row);
+  const labels = el('div', 'scale-labels');
+  labels.appendChild(el('span', null, step.scaleLabels[0]));
+  labels.appendChild(el('span', null, step.scaleLabels[1]));
+  card.appendChild(labels);
+}
+
+function highlightThen(node, container, siblingSelector, cb) {
+  container.querySelectorAll(siblingSelector).forEach(n => n.classList.remove('selected'));
+  node.classList.add('selected');
+  setTimeout(cb, 260);
+}
+
+/* ---- single choice (auto-advance) ---- */
+function renderSingle(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
+  const list = el('div', 'options-list');
+  const existing = session.answers[step.id];
+  step.options.forEach(opt => {
+    const card_ = el('button', 'option-card' + (existing === opt ? ' selected' : ''));
+    card_.appendChild(el('span', 'option-dot'));
+    card_.appendChild(el('span', null, opt));
+    card_.onclick = () => highlightThen(card_, list, '.option-card', () => commitAndAdvance(step, opt));
+    list.appendChild(card_);
+  });
+  card.appendChild(list);
+  if (step.optional) card.appendChild(skipRow(step));
+}
+
+/* ---- single choice built from a prior multi-select answer (Q23) ---- */
+function renderSingleFromPrior(card, step) {
+  const source = session.answers[step.sourceQuestion];
+  const options = (source && source.length) ? source : ['Nothing has stopped me — I still might apply'];
+  renderSingle(card, { ...step, options, optional: false });
+}
+
+/* ---- multi-select chips ---- */
+function renderMultiChips(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  const list = el('div', 'options-list');
+  const existing = new Set(session.answers[step.id] || []);
+  let otherText = (session.answers[step.id + '_other_text']) || '';
+  let otherInput;
+
+  step.options.forEach(opt => {
+    const card_ = el('button', 'option-card chip' + (existing.has(opt) ? ' selected' : ''));
+    card_.appendChild(el('span', 'option-dot'));
+    card_.appendChild(el('span', null, opt));
+    card_.onclick = () => {
+      if (existing.has(opt)) existing.delete(opt); else existing.add(opt);
+      card_.classList.toggle('selected');
+      if (opt === 'Other' && otherInput) otherInput.style.display = existing.has('Other') ? 'block' : 'none';
+    };
+    list.appendChild(card_);
+  });
+  card.appendChild(list);
+
+  if (step.allowOtherText) {
+    otherInput = document.createElement('input');
+    otherInput.className = 'text-input'; otherInput.placeholder = 'Please specify…';
+    otherInput.style.display = existing.has('Other') ? 'block' : 'none';
+    otherInput.value = otherText;
+    card.appendChild(otherInput);
+  }
+
+  const row = el('div', 'action-row');
+  const btn = el('button', 'btn btn-primary', 'Continue');
+  btn.onclick = () => {
+    const values = Array.from(existing);
+    recordAnswer(step.id, values);
+    if (step.allowOtherText && existing.has('Other')) recordAnswer(step.id + '_other_text', otherInput.value.trim());
+    goNext();
+  };
+  row.appendChild(btn);
+  card.appendChild(row);
+}
+
+/* ---- text (short / long) ---- */
+function renderText(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
+
+  const input = document.createElement(step.type === 'long_text' ? 'textarea' : 'input');
+  input.className = step.type === 'long_text' ? 'textarea-input' : 'text-input';
+  if (step.type === 'short_text') input.type = step.inputType || 'text';
+  input.placeholder = step.placeholder || '';
+  input.value = session.answers[step.id] || '';
+  card.appendChild(input);
+
+  if (step.quickFill) {
+    const qf = el('div', 'quick-fill-row');
+    const b = el('button', 'quick-fill-btn', step.quickFill);
+    b.onclick = () => commitAndAdvance(step, step.quickFill);
+    qf.appendChild(b);
+    card.appendChild(qf);
+  }
+
+  const row = el('div', 'action-row');
+  if (step.optional) {
+    const skip = el('button', 'btn btn-ghost', 'Skip');
+    skip.onclick = () => { recordAnswer(step.id, ''); goNext(); };
+    row.appendChild(skip);
+  }
+  const btn = el('button', 'btn btn-primary btn-full', 'Continue');
+  btn.onclick = () => {
+    const v = input.value.trim();
+    if (!step.optional && v.length === 0) { input.focus(); showToast('Type something, or use the quick option above.'); return; }
+    commitAndAdvance(step, v);
+  };
+  row.appendChild(btn);
+  card.appendChild(row);
+}
+
+function skipRow(step) {
+  const row = el('div', 'action-row');
+  const skip = el('button', 'btn btn-ghost btn-full', 'Prefer not to say');
+  skip.onclick = () => { recordAnswer(step.id, ''); goNext(); };
+  row.appendChild(skip);
+  return row;
+}
+
+/* ---- reveal / live stats ---- */
+async function renderReveal(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  const statWrap = el('div', 'stat-row');
+  statWrap.appendChild(el('div', 'step-subtitle', 'Loading how others answered…'));
+  card.appendChild(statWrap);
+
+  if (step.showUnlockBar) card.appendChild(await buildUnlockBar());
+
+  const row = el('div', 'action-row');
+  const btn = el('button', 'btn btn-primary btn-full', step.primaryLabel || 'Continue');
+  btn.onclick = () => commitAndAdvance(step, undefined);
+  row.appendChild(btn);
+  card.appendChild(row);
+
+  const stats = await fetchStatsFor(step.statsFor);
+  statWrap.innerHTML = '';
+  if (!stats.length) {
+    statWrap.appendChild(el('div', 'step-subtitle', 'You’re one of the first to answer — thank you. We’ll have real comparisons soon.'));
+    return;
+  }
+  stats.forEach(s => {
+    const pill = el('div', 'stat-pill');
+    pill.appendChild(el('span', null, s.label));
+    pill.appendChild(el('b', null, s.value));
+    statWrap.appendChild(pill);
+  });
+}
+
+/** Pulls aggregate counts from the public `question_stats` view for the given question ids. */
+async function fetchStatsFor(questionIds) {
+  if (!supabaseClient) return []; // demo mode: no live stats to show
+  try {
+    const { data, error } = await supabaseClient
+      .from('question_stats')
+      .select('question_id, value, n')
+      .in('question_id', questionIds);
+    if (error || !data || !data.length) return [];
+
+    const results = [];
+    for (const qid of questionIds) {
+      const rows = data.filter(r => r.question_id === qid);
+      const total = rows.reduce((s, r) => s + r.n, 0);
+      if (total === 0) continue;
+      if (qid === 'q8_awareness') {
+        const newsToMe = rows.find(r => safeParse(r.value) === 'No, this is news to me');
+        if (newsToMe) results.push({ label: 'had never heard this was possible', value: Math.round(100 * newsToMe.n / total) + '%' });
+      } else if (qid === 'q10_cost_guess') {
+        results.push({ label: 'people have guessed the cost so far', value: String(total) });
+      } else {
+        const top = rows.sort((a, b) => b.n - a.n)[0];
+        results.push({ label: 'most common answer: ' + safeParse(top.value), value: Math.round(100 * top.n / total) + '%' });
+      }
+    }
+    return results;
+  } catch { return []; }
+}
+function safeParse(v) { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch { return v; } }
+
+async function buildUnlockBar() {
+  const wrap = el('div', 'unlock-bar-wrap');
+  const track = el('div', 'unlock-bar-track');
+  const fill = el('div', 'unlock-bar-fill'); fill.style.width = '2%';
+  track.appendChild(fill);
+  wrap.appendChild(track);
+  const label = el('div', 'unlock-bar-label', 'Loading…');
+  wrap.appendChild(label);
+
+  if (supabaseClient) {
+    try {
+      const { data } = await supabaseClient.from('survey_progress').select('started').single();
+      const started = data?.started || 0;
+      const pct = Math.min(100, Math.round(100 * started / CONFIG.unlockTarget));
+      fill.style.width = pct + '%';
+      label.textContent = `${started} of ${CONFIG.unlockTarget} responses — real costs & the partner list unlock then.`;
+    } catch { label.textContent = 'Real costs & the partner list unlock once we have enough responses.'; }
+  } else {
+    label.textContent = 'Real costs & the partner list unlock once we have enough responses.';
+  }
+  return wrap;
+}
+
+/* ============================================================================
+   8. DEBRIEF + BOARDING PASS
+   ========================================================================== */
+function renderDebrief() {
+  session.completed = true;
+  persistSession();
+  pushSessionSnapshot();
+
+  const email = session.answers.email_signup;
+  if (email) {
+    queueWrite({
+      kind: 'contact', session_id: session.session_id, email,
+      phone_whatsapp: session.answers.q52_contact_detail || session.answers.q34_contact || session.answers.q45_contact_detail || '',
+      ok_followup_contact: session.answers.q52_contact_ok === 'Yes' || session.answers.q52_contact_ok === 'Yes, email is fine',
+      ok_junior_contact: session.answers.q45_junior_contact === 'Yes, happy to' || session.answers.q45_junior_contact === 'Yes, but only over email',
+      ok_interview_contact: session.answers.q34_willing_to_talk === 'Yes',
+    });
+  }
+
+  stage.innerHTML = '';
+  backBtn.classList.remove('visible');
+  tierChip.textContent = 'Done';
+  progressFill.style.width = '100%'; progressPlane.style.left = '98%';
+
+  const card = el('div', 'step-card');
+  card.appendChild(el('div', 'info-icon', '🎉'));
+  card.appendChild(el('div', 'step-title', 'Thank you — genuinely.'));
+  card.appendChild(el('div', 'step-subtitle',
+    'IITR does have semester exchange agreements with universities abroad, run through the International Relations office. Applications typically open early in the calendar year. We’re deliberately not naming numbers yet — that’s what this survey is for — but we’ll send what we find to the email you gave us.'));
+
+  card.appendChild(buildBoardingPass());
+
+  const shareRow = el('div', 'action-row');
+  const shareBtn = el('button', 'btn btn-primary btn-full', 'Share your boarding pass');
+  shareBtn.onclick = shareBoardingPass;
+  shareRow.appendChild(shareBtn);
+  card.appendChild(shareRow);
+
+  card.appendChild(el('div', 'step-subtitle',
+    'If you know someone who’s been on exchange, or who started an application and dropped it — please send them this. Those two groups are the hardest for us to reach and the most useful to hear from.'));
+
+  stage.appendChild(card);
+}
+
+function buildBoardingPass() {
+  const bp = el('div', 'boarding-pass'); bp.id = 'boardingPassCard';
+  const row = el('div', 'bp-row');
+  const left = el('div');
+  left.appendChild(el('div', 'bp-eyebrow', 'Exchange Reality Check'));
+  left.appendChild(el('div', 'bp-title', categoryLabel()));
+  row.appendChild(left);
+  row.appendChild(el('div', 'info-icon', '✈️'));
+  bp.appendChild(row);
+  bp.appendChild(el('div', 'bp-divider'));
+
+  const stats = el('div', 'bp-stats');
+  const guess = session.answers.q10_cost_guess;
+  addStat(stats, 'Your guess', guess && !guess.no_idea ? formatMoney(guess.value, '₹') : 'No idea');
+  addStat(stats, 'Awareness', session.answers.q8_awareness || '—');
+  addStat(stats, 'Would use a single info page', session.answers.q50_single_page_usefulness ? session.answers.q50_single_page_usefulness + ' / 5' : '—');
+  addStat(stats, 'Programme', session.answers.q2_programme || '—');
+  bp.appendChild(stats);
+  return bp;
+}
+function addStat(container, label, value) {
+  const d = el('div');
+  d.appendChild(el('div', 'bp-stat-label', label));
+  d.appendChild(el('div', 'bp-stat-value', String(value)));
+  container.appendChild(d);
+}
+function categoryLabel() {
+  return { A: 'Never applied (yet)', B: 'Started, didn’t finish', C: 'Been on exchange' }[session.branch] || 'Took the Reality Check';
+}
+
+async function shareBoardingPass() {
+  const node = document.getElementById('boardingPassCard');
+  try {
+    const canvas = await html2canvas(node, { backgroundColor: null, scale: 2 });
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], 'exchange-reality-check.png', { type: 'image/png' });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'Exchange Reality Check' }); return; } catch { /* user cancelled or unsupported — fall through */ }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'exchange-reality-check.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      showToast('Saved — share it from your photos.');
+    }, 'image/png');
+  } catch {
+    showToast('Couldn’t generate an image — try a screenshot instead.');
+  }
+}
+
+/* ============================================================================
+   9. OPTIONAL: Gemini-assisted empathetic one-liner after a long free-text
+      answer. Off by default (CONFIG.enableReflections). Calls a proxy YOU
+      deploy (never the raw Gemini API from the browser — that would expose
+      your key). Fully non-blocking: a failure here never stops the survey.
+   ========================================================================== */
+async function maybeReflect(step, answerText) {
+  if (!CONFIG.enableReflections || !CONFIG.geminiProxyUrl || !answerText || answerText.length < 12) return null;
+  try {
+    return await withBackoff(async () => {
+      const res = await fetch(CONFIG.geminiProxyUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: step.title, answer: answerText }),
+      });
+      if (!res.ok) throw new Error('reflection HTTP ' + res.status);
+      const data = await res.json();
+      return data.reflection || null;
+    }, { maxAttempts: 2 }); // reflections are a nicety — fail fast, don't hold up the flow
+  } catch { return null; }
+}
+
+/* ============================================================================
+   10. BOOT
+   ========================================================================== */
+(function boot() {
+  if (!isConfigured.supabase && !isConfigured.sheets) {
+    const banner = document.getElementById('devBanner');
+    banner.style.display = 'block';
+    banner.textContent = '⚠️ Demo mode — Supabase/Sheets not configured yet. Answers only save to this browser. See README.md.';
+  }
+  // NOTE: session.pointer === null is a meaningful state (the survey is
+  // complete — see advancePointer()'s final `return null` and renderDebrief()).
+  // Only a truly uninitialized session (pointer === undefined, i.e. this
+  // object didn't come from the default literal above or from a prior save)
+  // should be reset to the first step. Treating null and undefined the same
+  // here would bounce a finished respondent back to the welcome screen on
+  // every reload — which is exactly what happened before this comment existed.
+  if (session.pointer === undefined) session.pointer = { tier: 0, index: 0 };
+  if (!session.branch && session.answers.q18_category) session.branch = routeBranch(session.answers.q18_category);
+  flushQueue();
+  render();
+})();
+</script>
+</body>
+</html>

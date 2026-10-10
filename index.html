@@ -3,27 +3,38 @@
   ============================================================================
   Exchange Reality Check
   ============================================================================
-  A self-contained rebuild of "Studying abroad for a semester — a 5-minute
+  A self-contained rebuild of "Studying abroad for a semester, a 5-minute
   survey" (the original Google Form) as a tap-first, chat-style, gamified
   micro-survey. One HTML file: all markup, styles and logic live here on
-  purpose — nothing to build, no bundler, just open it or host it as-is.
+  purpose, nothing to build, no bundler, just open it or host it as-is.
+
+  DESIGN
+    The visual language is a check-in desk: every question is presented on
+    a paper ticket card, floating on a dusk-navy background, and the final
+    screen is a real boarding pass built from the respondent's own answers
+    (their name, their category mapped to a flight status, a generated
+    sequence code, even a one-off barcode). Typefaces: Fraunces for
+    headlines, IBM Plex Sans for body and controls, IBM Plex Mono for the
+    ticket-style data fields (sequence numbers, status line). See the
+    <style> block for the full token system.
 
   WHAT CHANGED FROM THE ORIGINAL FORM, AND WHY (for whoever maintains this):
     - Email moved from question #1 to the very end, paired with the result
-      reveal ("where should we send what we find"), instead of being the
-      first, highest-friction thing a stranger sees.
+      reveal (where to send what we find), instead of being the first,
+      highest-friction thing a stranger sees. It is still required: this is
+      how we reach people with real numbers later, not an afterthought.
     - The form's long "Knowledge probe" section opens with Q10 (cost guess)
-      turned into the FIRST thing anyone sees — a zero-knowledge-required
-      guess that creates a reason to keep going (the reveal), rather than
-      nine quiz-feeling questions in a row.
+      turned into the FIRST real question, a zero-knowledge-required guess
+      that creates a reason to keep going (the reveal), rather than nine
+      quiz-feeling questions in a row.
     - Every question is one screen, tap-first where possible. Long free-text
       questions stay free text (there's no substitute for someone's own
-      words) but are always skippable unless they're load-bearing for the
-      research (the Branch C "went/going" question set stays required,
-      since that group is explicitly the rarest and most useful).
+      words) but are skippable unless they're load-bearing for the research
+      (the Branch C "went/going" question set stays required, since that
+      group is explicitly the rarest and most useful).
     - The branching in the live Google Form routes EVERY respondent past
       "Section 2 (PG Specific)" by default (its "After section 1" rule
-      points straight to Section 3) — so right now, in production, PG
+      points straight to Section 3), so right now, in production, PG
       students never actually see that question. This rebuild fixes that:
       the PG-specific question fires whenever Q2's answer is a postgraduate
       programme, regardless of anything else.
@@ -31,13 +42,13 @@
       sections existed in the form. Reading Q28's options ("I was rejected
       or not selected", "I got selected but chose not to go") confirms the
       intended mapping, which this rebuild makes explicit:
-        Q18 option 1 or 2 ("never seriously considered" / "thought about it,
-          never started")              -> Branch A (never applied)
-        Q18 option 3, 4 or 5 ("started but didn't finish" / "applied, not
-          selected" / "selected, didn't go")
-                                        -> Branch B (started but didn't finish)
-        Q18 option 6 ("been on exchange / on one now")
-                                        -> Branch C (went / going)
+        Q18 option 1 or 2 (never seriously considered / thought about it,
+          never started)                 -> Branch A (never applied)
+        Q18 option 3, 4 or 5 (started but didn't finish / applied, not
+          selected / selected, didn't go)
+                                          -> Branch B (started but didn't finish)
+        Q18 option 6 (been on exchange / on one now)
+                                          -> Branch C (went / going)
 
   ARCHITECTURE
     - FLOW (below) is pure data: an ordered list of "step" objects per
@@ -46,15 +57,15 @@
     - Every answer is written the instant it's given, to THREE places in
       parallel, each independently retried with exponential backoff:
         1. localStorage (so a refresh/closed tab resumes exactly where you
-           left off — this is also where everything lives if Supabase
-           isn't configured yet, see CONFIG below)
+           left off; this is also where everything lives if Supabase isn't
+           configured yet, see CONFIG below)
         2. Supabase `answers` table (insert-only from the browser; see
-           supabase/schema.sql for the full schema + RLS policies)
+           supabase/schema.sql for the full schema and RLS policies)
         3. a Google Apps Script Web App that mirrors the same row into a
-           Sheet (see google-apps-script/sync.gs) — best-effort, Supabase
-           is the source of truth if the two ever disagree
+           Sheet (see google-apps-script/sync.gs), best-effort; Supabase is
+           the source of truth if the two ever disagree
     - Live peer stats are read from a PUBLIC, PII-free aggregate view
-      (`question_stats` / `survey_progress` in schema.sql) — the browser
+      (`question_stats` / `survey_progress` in schema.sql); the browser
       never reads back raw rows, only counts.
 
   SETUP
@@ -69,204 +80,252 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
 <title>Exchange Reality Check</title>
-<meta name="description" content="A 2-minute reality check on studying abroad for a semester — guess, compare, and tell us what actually stopped you.">
+<meta name="description" content="A two-minute reality check on studying abroad for a semester: guess, compare, and tell us what actually stopped you.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,480;9..144,560;9..144,650&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 
 <!-- Supabase JS v2 (UMD build) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<!-- html2canvas, used only to rasterize the shareable "boarding pass" result card -->
+<!-- html2canvas, used only to rasterize the shareable boarding pass -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
 /* ==========================================================================
    DESIGN TOKENS
+   A check-in desk, not a chat app: dusk-navy canvas, cream ticket cards,
+   a single airmail red for action and ink. Fraunces carries the voice in
+   headlines; IBM Plex Sans runs the body and controls; IBM Plex Mono is
+   reserved for ticket-style data (sequence codes, the status line) so it
+   reads as functional print, not decoration.
    ========================================================================== */
 :root {
-  color-scheme: dark;
-  --bg-1: #170f29;
-  --bg-2: #2c1a4a;
-  --bg-3: #5a2a52;
-  --bg-4: #c9566b;
-  --glass-bg: rgba(255,255,255,0.07);
-  --glass-bg-strong: rgba(255,255,255,0.12);
-  --glass-border: rgba(255,255,255,0.16);
-  --glass-blur: 18px;
-  --text-primary: #fdf6f0;
-  --text-secondary: rgba(253,246,240,0.68);
-  --text-faint: rgba(253,246,240,0.45);
-  --accent: #ff8fa3;
-  --accent-strong: #ff6b8b;
-  --accent-soft: rgba(255,143,163,0.16);
-  --success: #7bd389;
-  --success-soft: rgba(123,211,137,0.16);
-  --warn: #ffcf7a;
-  --radius-lg: 1.5rem;
-  --radius-md: 1rem;
-  --radius-sm: 0.65rem;
+  --navy-900: #0A1C2B;
+  --navy-800: #123049;
+  --navy-700: #214A68;
+  --navy-600: #2E6186;
+
+  --paper: #F7F1E2;
+  --paper-dim: #EEE4C8;
+  --paper-edge: #DED0A8;
+
+  --ink: #1C2B33;
+  --ink-soft: rgba(28,43,51,0.62);
+  --ink-faint: rgba(28,43,51,0.4);
+
+  --cream: #F3ECDC;
+  --cream-soft: rgba(243,236,220,0.68);
+  --cream-faint: rgba(243,236,220,0.42);
+
+  --red: #B23A2E;
+  --red-dark: #8C2C22;
+  --red-soft: rgba(178,58,46,0.12);
+  --brass: #A9793C;
+  --success: #3F7D58;
+  --success-soft: rgba(63,125,88,0.14);
+
+  --radius-card: 0.85rem;
+  --radius-md: 0.6rem;
+  --radius-sm: 0.4rem;
   --space-1: 0.5rem;
   --space-2: 1rem;
   --space-3: 1.5rem;
   --space-4: 2.25rem;
-  --max-width: 30rem;
+
+  --max-width: 27rem;
   --touch-min: 2.9rem;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --font-display: 'Fraunces', Georgia, 'Iowan Old Style', serif;
+  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --fs-title: clamp(1.45rem, 1.15rem + 1.4vw, 1.85rem);
+  --fs-body: 1rem;
+  --fs-subtitle: 0.95rem;
+  --fs-small: 0.82rem;
+  --fs-micro: 0.72rem;
+
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * { box-sizing: border-box; }
 html, body {
   margin: 0; padding: 0; min-height: 100vh;
-  font-family: var(--font);
-  color: var(--text-primary);
-  background: radial-gradient(ellipse 120% 80% at 50% -10%, var(--bg-3) 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+  font-family: var(--font-body);
+  color: var(--cream);
+  background:
+    radial-gradient(ellipse 90% 60% at 18% -8%, var(--navy-700) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, var(--navy-700) 0%, transparent 55%),
+    linear-gradient(180deg, var(--navy-800) 0%, var(--navy-900) 70%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }
-body {
-  display: flex; flex-direction: column; align-items: center;
-  min-height: 100dvh;
-  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
-}
-h1, h2, h3, p { margin: 0; }
-button { font-family: inherit; }
+h1, h2, h3, p, dl, dd, dt { margin: 0; }
+button, input, textarea { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 
+/* ==========================================================================
+   SHELL + DESKTOP SPLIT LAYOUT
+   Mobile: a single paper card centered on the navy canvas. From 880px up,
+   a fixed left panel (the "departure board") appears beside the card, so
+   the wide viewport isn't just a stretched phone screen.
+   ========================================================================== */
+.app-root { width: 100%; min-height: 100dvh; display: flex; justify-content: center; }
 .app-shell {
-  width: 100%;
-  max-width: var(--max-width);
+  width: 100%; max-width: var(--max-width);
   min-height: 100dvh;
   display: flex; flex-direction: column;
-  padding: var(--space-2) var(--space-2) var(--space-4);
+  padding: calc(var(--space-2) + env(safe-area-inset-top, 0)) var(--space-2) var(--space-4);
   position: relative;
 }
 
-/* ==========================================================================
-   GLASS PRIMITIVES
-   ========================================================================== */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+.side-panel { display: none; }
+
+@media (min-width: 880px) {
+  .app-root { gap: 0; align-items: stretch; }
+  .side-panel {
+    display: flex; flex-direction: column; justify-content: space-between;
+    width: 23rem; flex-shrink: 0;
+    padding: 3.5rem 3rem;
+    background:
+      radial-gradient(ellipse 80% 50% at 15% 0%, var(--navy-700) 0%, transparent 60%),
+      var(--navy-900);
+    border-right: 1px solid var(--navy-700);
+    position: sticky; top: 0; height: 100dvh;
+  }
+  .app-shell { padding-top: 3.5rem; padding-left: var(--space-3); padding-right: var(--space-3); }
 }
 
-/* ==========================================================================
-   PROGRESS / PLANE TRACKER
-   ========================================================================== */
-.progress-wrap { padding: var(--space-1) 0 var(--space-2); }
-.progress-track {
-  position: relative;
-  height: 0.4rem;
-  background: rgba(255,255,255,0.1);
-  border-radius: 999px;
-  overflow: visible;
+.side-wordmark {
+  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass);
 }
-.progress-fill {
-  position: absolute; left: 0; top: 0; bottom: 0;
-  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
-  border-radius: 999px;
-  transition: width 0.5s var(--ease);
+.side-headline {
+  font-family: var(--font-display); font-weight: 560; font-size: 1.9rem;
+  line-height: 1.22; color: var(--cream); margin-top: 1.1rem;
 }
-.progress-plane {
-  position: absolute; top: 50%;
+.route-graphic { margin-top: 2.5rem; position: relative; }
+.route-svg { width: 100%; height: 2.6rem; display: block; }
+.route-plane {
+  position: absolute; top: 50%; left: 4%;
   transform: translate(-50%, -50%) rotate(90deg);
-  font-size: 1.1rem;
-  transition: left 0.5s var(--ease);
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+  font-size: 0.95rem; color: var(--red);
+  transition: left 0.6s var(--ease);
 }
-.progress-label {
+.route-labels {
   display: flex; justify-content: space-between;
-  font-size: 0.72rem; color: var(--text-faint);
-  margin-top: 0.4rem; letter-spacing: 0.02em;
+  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.06em;
+  color: var(--cream-soft); margin-top: 0.3rem;
 }
+.side-status { margin-top: 2.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.side-status > div { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.side-status dt {
+  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--cream-faint);
+}
+.side-status dd {
+  font-family: var(--font-mono); font-size: var(--fs-small); color: var(--cream);
+  text-align: right;
+}
+.side-footnote { font-size: var(--fs-small); color: var(--cream-faint); line-height: 1.5; margin-top: 2rem; }
 
 /* ==========================================================================
-   TOP BAR
+   HEADER / PROGRESS
+   One persistent status line (section name + a running count), not a label
+   repeated above every heading. The rule underneath is the only "progress
+   bar": thin, flat, no mascot riding along it.
    ========================================================================== */
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  min-height: 2.5rem;
-}
+.app-header { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: var(--space-2); }
+.header-row { display: flex; align-items: center; justify-content: space-between; min-height: 2.4rem; }
 .back-btn {
   width: var(--touch-min); height: var(--touch-min);
   display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; color: var(--text-secondary);
-  border-radius: 999px; cursor: pointer; font-size: 1.1rem;
+  background: transparent; border: none; color: var(--cream-soft);
+  border-radius: 999px; cursor: pointer; font-size: 1.15rem;
   transition: background 0.15s;
   visibility: hidden;
 }
 .back-btn.visible { visibility: visible; }
-.back-btn:hover, .back-btn:active { background: rgba(255,255,255,0.08); }
-.tier-chip {
-  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-faint); padding: 0.3rem 0.7rem;
-  border: 1px solid var(--glass-border); border-radius: 999px;
+.back-btn:hover, .back-btn:active { background: rgba(243,236,220,0.08); }
+.header-status {
+  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream-soft);
 }
+.progress-track { height: 2px; background: rgba(243,236,220,0.16); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--red); transition: width 0.45s var(--ease); }
 
 /* ==========================================================================
-   STEP CARD
+   THE TICKET CARD
+   Every question is a paper card: a shallow die-cut notch at the top edge
+   (matching the navy canvas) is the one consistent detail tying every
+   screen to the boarding-pass finale.
    ========================================================================== */
-.step-stage {
-  flex: 1; display: flex; flex-direction: column; justify-content: center;
-  padding: var(--space-2) 0;
-}
+.step-stage { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: var(--space-2) 0; }
 .step-card {
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
   padding: var(--space-3);
   display: flex; flex-direction: column; gap: var(--space-2);
-  animation: stepIn 0.38s var(--ease);
+  box-shadow: 0 18px 40px rgba(5,14,22,0.35);
+  position: relative;
+  animation: cardIn 0.32s var(--ease);
 }
-.step-card.leaving { animation: stepOut 0.22s var(--ease) forwards; }
-@keyframes stepIn {
-  from { opacity: 0; transform: translateY(14px) scale(0.985); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+.step-card::before, .step-card::after {
+  content: ""; position: absolute; top: -0.5rem; width: 1rem; height: 1rem;
+  background: var(--navy-900); border-radius: 999px;
 }
-@keyframes stepOut {
-  to { opacity: 0; transform: translateY(-10px) scale(0.985); }
+.step-card::before { left: 1.1rem; }
+.step-card::after { right: 1.1rem; }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 }
-.step-eyebrow {
-  font-size: 0.74rem; font-weight: 600; color: var(--accent);
-  text-transform: uppercase; letter-spacing: 0.06em;
-}
-.step-title { font-size: 1.28rem; font-weight: 650; line-height: 1.35; }
-.step-subtitle { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { .step-card { animation: none; } }
+
+.step-title { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 580; line-height: 1.22; color: var(--ink); letter-spacing: -0.005em; }
+.step-subtitle { font-size: var(--fs-subtitle); color: var(--ink-soft); line-height: 1.55; }
 
 /* ==========================================================================
-   OPTION CARDS (single choice)
+   OPTION LIST (vertical, for longer or nuanced choices)
    ========================================================================== */
-.options-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.options-list { display: flex; flex-direction: column; gap: 0.5rem; }
 .option-card {
-  display: flex; align-items: center; gap: 0.7rem;
+  display: flex; align-items: center; gap: 0.75rem;
   min-height: var(--touch-min);
-  padding: 0.85rem 1rem;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  padding: 0.8rem 1rem;
+  background: #fff; border: 1px solid var(--paper-edge);
   border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 0.95rem; text-align: left; line-height: 1.4;
-  cursor: pointer; transition: all 0.15s var(--ease);
+  color: var(--ink);
+  font-size: var(--fs-body); text-align: left; line-height: 1.4;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
 }
-.option-card:active { transform: scale(0.98); }
-.option-card.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
+.option-card:active { transform: scale(0.99); }
+.option-card.selected { background: var(--red-soft); border-color: var(--red); }
 .option-dot {
-  width: 1.1rem; height: 1.1rem; flex-shrink: 0;
-  border-radius: 999px; border: 1.5px solid var(--text-faint);
+  width: 1.05rem; height: 1.05rem; flex-shrink: 0;
+  border-radius: 999px; border: 1.5px solid var(--ink-faint);
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
 }
-.option-card.selected .option-dot { border-color: var(--accent); background: var(--accent); }
-.option-dot::after {
-  content: ""; width: 0.5rem; height: 0.5rem; border-radius: 999px;
-  background: var(--bg-1); transform: scale(0); transition: transform 0.15s;
-}
+.option-card.selected .option-dot { border-color: var(--red); background: var(--red); }
+.option-dot::after { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 999px; background: var(--paper); transform: scale(0); transition: transform 0.15s; }
 .option-card.selected .option-dot::after { transform: scale(1); }
-
-/* multi-select chips use square dots */
-.option-card.chip .option-dot { border-radius: 0.3rem; }
+.option-card.chip .option-dot { border-radius: 0.25rem; }
 .option-card.chip .option-dot::after { border-radius: 0.1rem; }
+
+/* Segmented pill row, for short discrete choices (year, gender, yes/no) */
+.options-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.option-pill {
+  min-height: var(--touch-min); padding: 0.6rem 1.1rem;
+  background: #fff; border: 1px solid var(--paper-edge); border-radius: 999px;
+  color: var(--ink); font-size: var(--fs-body); font-weight: 500;
+  cursor: pointer; transition: all 0.15s var(--ease);
+  flex: 1 1 auto; text-align: center;
+}
+.option-pill:active { transform: scale(0.97); }
+.option-pill.selected { background: var(--red); border-color: var(--red); color: var(--paper); }
 
 /* ==========================================================================
    SCALE (1-5)
@@ -274,123 +333,160 @@ button { font-family: inherit; }
 .scale-row { display: flex; justify-content: space-between; gap: 0.4rem; }
 .scale-dot {
   flex: 1; aspect-ratio: 1; max-width: 3rem;
-  border-radius: 999px; border: 1.5px solid var(--glass-border);
-  background: var(--glass-bg); color: var(--text-primary);
-  font-weight: 650; font-size: 0.95rem;
+  border-radius: 999px; border: 1.5px solid var(--paper-edge);
+  background: #fff; color: var(--ink);
+  font-family: var(--font-mono); font-weight: 600; font-size: var(--fs-body);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.15s var(--ease);
 }
 .scale-dot:active { transform: scale(0.92); }
-.scale-dot.selected { background: var(--accent); border-color: var(--accent); color: var(--bg-1); }
-.scale-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-faint); padding: 0 0.1rem; }
+.scale-dot.selected { background: var(--red); border-color: var(--red); color: var(--paper); }
+.scale-labels { display: flex; justify-content: space-between; font-size: var(--fs-small); color: var(--ink-faint); padding: 0 0.1rem; }
 
 /* ==========================================================================
-   SLIDER
+   SLIDER + PAIRED NUMBER ENTRY
    ========================================================================== */
-.slider-value { font-size: 1.9rem; font-weight: 700; color: var(--accent); }
+.slider-value { font-family: var(--font-display); font-size: 2.1rem; font-weight: 580; color: var(--red); }
 input[type="range"] {
-  -webkit-appearance: none; width: 100%; height: 0.45rem;
-  border-radius: 999px; background: rgba(255,255,255,0.12);
-  outline: none; margin: 0.4rem 0;
+  -webkit-appearance: none; width: 100%; height: 0.4rem;
+  border-radius: 999px; background: var(--paper-edge);
+  outline: none; margin: 0.5rem 0;
 }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 1.5rem; height: 1.5rem; border-radius: 999px;
-  background: var(--accent); border: 3px solid var(--bg-1);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4); cursor: pointer;
+  -webkit-appearance: none; width: 1.4rem; height: 1.4rem; border-radius: 999px;
+  background: var(--red); border: 3px solid var(--paper);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.3); cursor: pointer;
 }
 input[type="range"]::-moz-range-thumb {
-  width: 1.5rem; height: 1.5rem; border-radius: 999px; border: 3px solid var(--bg-1);
-  background: var(--accent); cursor: pointer;
+  width: 1.4rem; height: 1.4rem; border-radius: 999px; border: 3px solid var(--paper);
+  background: var(--red); cursor: pointer;
+}
+.exact-amount-row { display: flex; align-items: center; gap: 0.5rem; }
+.exact-amount-row label { font-size: var(--fs-small); color: var(--ink-soft); flex-shrink: 0; }
+.exact-amount-input {
+  width: 100%; padding: 0.55rem 0.7rem;
+  background: #fff; border: 1px solid var(--paper-edge); border-radius: var(--radius-sm);
+  color: var(--ink); font-family: var(--font-mono); font-size: var(--fs-body);
 }
 .no-idea-btn {
-  align-self: flex-start; font-size: 0.82rem; color: var(--text-secondary);
-  background: transparent; border: 1px dashed var(--glass-border);
+  align-self: flex-start; font-size: var(--fs-small); color: var(--ink-soft);
+  background: transparent; border: 1px dashed var(--ink-faint);
   border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
 }
-.no-idea-btn.active { color: var(--accent); border-color: var(--accent); border-style: solid; }
+.no-idea-btn.active { color: var(--red); border-color: var(--red); border-style: solid; }
 
 /* ==========================================================================
    TEXT INPUTS
    ========================================================================== */
 .text-input, .textarea-input {
-  width: 100%; padding: 0.9rem 1rem;
-  background: var(--glass-bg); border: 1px solid var(--glass-border);
-  border-radius: var(--radius-md); color: var(--text-primary);
-  font-size: 0.95rem; font-family: inherit; line-height: 1.5;
+  width: 100%; padding: 0.85rem 1rem;
+  background: #fff; border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-md); color: var(--ink);
+  font-size: var(--fs-body); font-family: inherit; line-height: 1.5;
   resize: vertical;
 }
-.text-input:focus, .textarea-input:focus { outline: none; border-color: var(--accent); }
-.text-input::placeholder, .textarea-input::placeholder { color: var(--text-faint); }
+.text-input:focus, .textarea-input:focus { outline: none; border-color: var(--red); }
+.text-input::placeholder, .textarea-input::placeholder { color: var(--ink-faint); }
 .textarea-input { min-height: 6rem; }
+.field-label { font-size: var(--fs-small); color: var(--ink-soft); font-weight: 500; }
 .quick-fill-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .quick-fill-btn {
-  font-size: 0.82rem; color: var(--text-secondary);
-  background: transparent; border: 1px dashed var(--glass-border);
+  font-size: var(--fs-small); color: var(--ink-soft);
+  background: transparent; border: 1px dashed var(--ink-faint);
   border-radius: 999px; padding: 0.4rem 0.85rem; cursor: pointer;
 }
 
 /* ==========================================================================
    ACTION ROW
    ========================================================================== */
-.action-row { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+.action-row { display: flex; gap: 0.6rem; margin-top: 0.2rem; }
 .btn {
   flex: 1; min-height: var(--touch-min);
   border-radius: var(--radius-md); border: none;
-  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  font-size: var(--fs-body); font-weight: 600; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 0.4rem;
-  transition: transform 0.12s, opacity 0.15s;
+  transition: transform 0.12s, opacity 0.15s, background 0.15s;
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary { background: linear-gradient(135deg, var(--accent-strong), var(--accent)); color: #2a0f1c; }
+.btn-primary { background: var(--red); color: #fff; }
+.btn-primary:hover { background: var(--red-dark); }
 .btn-primary[disabled] { opacity: 0.35; pointer-events: none; }
-.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--glass-border); flex: 0 0 auto; padding: 0 1.1rem; }
+.btn-ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--paper-edge); flex: 0 0 auto; padding: 0 1.1rem; }
 .btn-full { flex: 1; }
 
 /* ==========================================================================
-   INFO / WELCOME / REVEAL SCREENS
+   STAT REVEAL + UNLOCK BAR
    ========================================================================== */
-.info-icon { font-size: 2.2rem; }
 .stat-row { display: flex; flex-direction: column; gap: 0.5rem; }
 .stat-pill {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0.8rem 1rem; background: var(--glass-bg-strong);
-  border-radius: var(--radius-md); font-size: 0.88rem;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  padding: 0.75rem 1rem; background: var(--paper-dim);
+  border-radius: var(--radius-md); font-size: var(--fs-small); color: var(--ink-soft);
 }
-.stat-pill b { color: var(--accent); font-size: 1rem; }
-.unlock-bar-wrap { margin-top: 0.2rem; }
-.unlock-bar-track {
-  height: 0.6rem; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;
-}
-.unlock-bar-fill { height: 100%; background: linear-gradient(90deg, var(--success), #a8e6af); border-radius: 999px; transition: width 0.6s var(--ease); }
-.unlock-bar-label { font-size: 0.76rem; color: var(--text-faint); margin-top: 0.35rem; }
+.stat-pill b { color: var(--red); font-family: var(--font-mono); font-size: var(--fs-body); font-weight: 600; }
+.unlock-bar-wrap { margin-top: 0.1rem; }
+.unlock-bar-track { height: 0.5rem; background: var(--paper-dim); border-radius: 999px; overflow: hidden; }
+.unlock-bar-fill { height: 100%; background: var(--success); border-radius: 999px; transition: width 0.6s var(--ease); }
+.unlock-bar-label { font-size: var(--fs-small); color: var(--ink-faint); margin-top: 0.35rem; }
 
 /* ==========================================================================
-   BOARDING PASS RESULT CARD
+   DEBRIEF: STAMP + BOARDING PASS
    ========================================================================== */
-.boarding-pass {
-  background: linear-gradient(135deg, #2c1a4a 0%, #5a2a52 60%, #c9566b 100%);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  position: relative; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.2);
+.stamp {
+  width: 4.6rem; height: 4.6rem; border-radius: 999px;
+  border: 2px solid var(--success); color: var(--success);
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  transform: rotate(-7deg); align-self: flex-start;
+  font-family: var(--font-mono); letter-spacing: 0.04em;
 }
-.boarding-pass::before {
-  content: "✈"; position: absolute; right: -0.5rem; top: -0.5rem;
-  font-size: 6rem; opacity: 0.08; transform: rotate(35deg);
+.stamp-line1 { font-size: 0.6rem; font-weight: 600; }
+.stamp-line2 { font-size: 0.56rem; margin-top: 0.1rem; }
+
+.ticket {
+  display: flex; flex-direction: column;
+  background: var(--paper-dim); border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-md); overflow: hidden;
 }
-.bp-row { display: flex; justify-content: space-between; align-items: flex-start; }
-.bp-eyebrow { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
-.bp-title { font-size: 1.3rem; font-weight: 700; margin-top: 0.2rem; }
-.bp-divider { border-top: 1px dashed rgba(255,255,255,0.25); margin: 1rem 0; position: relative; }
-.bp-divider::before, .bp-divider::after {
-  content: ""; position: absolute; top: -0.6rem; width: 1.2rem; height: 1.2rem;
-  background: var(--bg-1); border-radius: 999px;
+.ticket-body { display: flex; flex-direction: column; min-width: 0; }
+.ticket-main { padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.ticket-topline {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-faint);
 }
-.bp-divider::before { left: -1.9rem; }
-.bp-divider::after { right: -1.9rem; }
-.bp-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-.bp-stat-label { font-size: 0.68rem; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; }
-.bp-stat-value { font-size: 1.05rem; font-weight: 650; margin-top: 0.15rem; }
+.ticket-passenger-label { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.ticket-passenger-name { font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; color: var(--ink); line-height: 1.15; }
+
+.ticket-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem 0.6rem; }
+.ticket-field-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); }
+.ticket-field-value { font-family: var(--font-mono); font-size: var(--fs-small); font-weight: 600; color: var(--ink); margin-top: 0.15rem; }
+
+.ticket-divider {
+  height: 0; border-top: 2px dashed var(--paper-edge); position: relative; margin: 0 -1px;
+}
+.ticket-divider::before, .ticket-divider::after {
+  content: ""; position: absolute; width: 1.1rem; height: 1.1rem; border-radius: 999px;
+  background: var(--paper); top: -0.6rem;
+}
+.ticket-divider::before { left: -0.6rem; }
+.ticket-divider::after { right: -0.6rem; }
+
+.ticket-answers { padding: 0.9rem 1.2rem 1.1rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.ticket-answers-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.15rem; }
+.ticket-answer-row { display: flex; justify-content: space-between; gap: 1rem; font-size: var(--fs-small); color: var(--ink-soft); }
+.ticket-answer-row b { color: var(--ink); font-weight: 600; }
+
+.ticket-stub { padding: 1rem 1.2rem 1.2rem; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
+.ticket-stub-seq { font-family: var(--font-mono); font-size: var(--fs-small); font-weight: 600; color: var(--ink); letter-spacing: 0.04em; }
+.ticket-stub-seq span { display: block; font-size: 0.62rem; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; margin-bottom: 0.15rem; }
+.barcode { height: 2.3rem; width: 7.5rem; flex-shrink: 0; }
+
+/* The ticket card keeps a fixed, portrait, phone-ticket width at every screen
+   size (it matches --max-width, not the viewport), so it never has room for a
+   side-by-side main+stub split without feeling cramped. It stays one stacked
+   column: main details, a dashed tear line, your answers, another tear line,
+   then the stub row (sequence plus barcode), the same shape a real paper
+   boarding pass folds into. */
 
 /* ==========================================================================
    TOAST + MODAL  (replaces window.alert / confirm entirely)
@@ -403,10 +499,9 @@ input[type="range"]::-moz-range-thumb {
 }
 .toast {
   pointer-events: auto;
-  background: rgba(20,12,34,0.92); backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border); border-radius: 999px;
-  padding: 0.7rem 1.1rem; font-size: 0.85rem; color: var(--text-primary);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  background: var(--navy-900); border: 1px solid var(--navy-700); border-radius: var(--radius-md);
+  padding: 0.7rem 1.1rem; font-size: var(--fs-small); color: var(--cream);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
   animation: toastIn 0.25s var(--ease);
   max-width: 100%;
 }
@@ -415,59 +510,75 @@ input[type="range"]::-moz-range-thumb {
 #modal-root {
   position: fixed; inset: 0; z-index: 1100;
   display: none; align-items: flex-end; justify-content: center;
-  background: rgba(10,6,18,0.55); backdrop-filter: blur(4px);
+  background: rgba(10,20,30,0.6);
 }
 #modal-root.open { display: flex; }
 .modal-sheet {
   width: 100%; max-width: var(--max-width);
-  background: #1d1230; border: 1px solid var(--glass-border);
-  border-radius: 1.5rem 1.5rem 0 0;
+  background: var(--paper); border: 1px solid var(--paper-edge);
+  border-radius: 1.1rem 1.1rem 0 0;
   padding: var(--space-3) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0));
   display: flex; flex-direction: column; gap: 0.9rem;
   animation: sheetIn 0.28s var(--ease);
 }
 @keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
-.modal-title { font-size: 1.05rem; font-weight: 650; }
-.modal-body { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; }
+.modal-title { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; color: var(--ink); }
+.modal-body { font-size: var(--fs-subtitle); color: var(--ink-soft); line-height: 1.5; }
 .modal-actions { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
 
-/* dev-mode banner shown when CONFIG isn't filled in yet */
+/* notice banner shown when CONFIG isn't filled in yet */
 .dev-banner {
-  font-size: 0.74rem; text-align: center; color: var(--warn);
-  background: rgba(255,207,122,0.1); border: 1px dashed rgba(255,207,122,0.4);
+  font-family: var(--font-mono); font-size: var(--fs-micro); text-align: center; color: var(--brass);
+  background: rgba(169,121,60,0.12); border: 1px dashed rgba(169,121,60,0.4);
   border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; margin-bottom: 0.6rem;
 }
 
-/* reflection bubble (optional Gemini-assisted empathetic one-liner) */
 .reflection-bubble {
-  font-size: 0.85rem; color: var(--text-secondary); font-style: italic;
-  padding: 0.6rem 0.9rem; border-left: 2px solid var(--accent);
-  background: var(--glass-bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-@media (min-width: 540px) {
-  .app-shell { padding-top: var(--space-3); }
+  font-size: var(--fs-small); color: var(--ink-soft); font-style: italic;
+  padding: 0.6rem 0.9rem; border-left: 2px solid var(--red);
+  background: var(--paper-dim); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 </style>
 </head>
 <body>
 
-<div class="app-shell">
-  <div class="progress-wrap">
-    <div class="topbar">
-      <button class="back-btn" id="backBtn" aria-label="Back">←</button>
-      <span class="tier-chip" id="tierChip">Intro</span>
-      <span style="width:var(--touch-min)"></span>
+<div class="app-root">
+  <aside class="side-panel" id="sidePanel">
+    <div>
+      <div class="side-wordmark">IITR Exchange Desk</div>
+      <h1 class="side-headline" id="sideHeadline">Let's see where this goes.</h1>
+      <div class="route-graphic" aria-hidden="true">
+        <svg class="route-svg" viewBox="0 0 320 24" preserveAspectRatio="none">
+          <line x1="14" y1="12" x2="306" y2="12" stroke="rgba(243,236,220,0.3)" stroke-width="1.5" stroke-dasharray="3 6"/>
+          <circle cx="14" cy="12" r="5" fill="#B23A2E"/>
+          <circle cx="306" cy="12" r="5" fill="none" stroke="rgba(243,236,220,0.5)" stroke-width="1.5"/>
+        </svg>
+        <div class="route-plane" id="routePlane">&#9992;</div>
+        <div class="route-labels"><span>IITR</span><span id="routeDestLabel">?</span></div>
+      </div>
+      <dl class="side-status">
+        <div><dt>Status</dt><dd id="sideStatusValue">Check-in</dd></div>
+        <div><dt>Passenger</dt><dd id="sidePassenger">TBD</dd></div>
+        <div><dt>Progress</dt><dd id="sideProgress">Q 1</dd></div>
+      </dl>
     </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="progressFill" style="width:2%"></div>
-      <div class="progress-plane" id="progressPlane" style="left:2%">✈️</div>
+    <p class="side-footnote">Two minutes, mostly tapping. Your answers save as you go, so closing this tab won't lose anything.</p>
+  </aside>
+
+  <div class="app-shell">
+    <div class="app-header">
+      <div class="header-row">
+        <button class="back-btn" id="backBtn" aria-label="Back">&#8592;</button>
+        <span class="header-status" id="headerStatus">Check-in</span>
+        <span style="width:var(--touch-min)"></span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:2%"></div></div>
     </div>
+
+    <div id="devBanner" class="dev-banner" style="display:none"></div>
+
+    <div class="step-stage" id="stepStage"><!-- render() injects here --></div>
   </div>
-
-  <div id="devBanner" class="dev-banner" style="display:none"></div>
-
-  <div class="step-stage" id="stepStage"><!-- renderStep() injects here --></div>
 </div>
 
 <div id="toast-root"></div>
@@ -477,10 +588,10 @@ input[type="range"]::-moz-range-thumb {
 'use strict';
 
 /* ============================================================================
-   1. CONFIG — fill these in before deploying. See README.md.
+   1. CONFIG: fill these in before deploying. See README.md.
    ========================================================================== */
 const CONFIG = {
-  // Supabase project → Settings → API
+  // Supabase project -> Settings -> API
   supabaseUrl: 'https://flrlczafuuufdvhebaph.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscmxjemFmdXV1ZmR2aGViYXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MjE2NDgsImV4cCI6MjEwNzE5NzY0OH0.B6ep6BxeP-SPqQcMLZPqXpvkJ364zF7HwUJqsZxgaAM',
 
@@ -489,12 +600,12 @@ const CONFIG = {
 
   // Optional: a small proxy you deploy yourself (Cloudflare Worker, Apps
   // Script, etc.) that calls the Gemini API server-side, so the key never
-  // ships in this client-side file. Leave blank to disable reflections
-  // entirely — the survey works perfectly well without this.
+  // ships in this client-side file. Leave blank to disable reflections;
+  // the survey works fully without this.
   geminiProxyUrl: '',
   enableReflections: false,
 
-  // How many total respondents unlock the "real data" reveal (Q50's pitch).
+  // How many total respondents unlock the real-data reveal (Q50's pitch).
   unlockTarget: 150,
 
   // Writes retry with exponential backoff: baseDelayMs * 2^attempt, capped.
@@ -509,10 +620,10 @@ const isConfigured = {
 };
 
 /* ============================================================================
-   2. UTILITIES — toasts, modals (no alert()/confirm() anywhere in this file),
+   2. UTILITIES: toasts, modals (no alert()/confirm() anywhere in this file),
       backoff helper, small DOM helpers.
    ========================================================================== */
-function showToast(message, ms = 2600) {
+function showToast(message, ms = 2800) {
   const root = document.getElementById('toast-root');
   const el = document.createElement('div');
   el.className = 'toast';
@@ -566,17 +677,18 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xx
 }));
 
 /* ============================================================================
-   3. PERSISTENCE — localStorage session/answers + a durable write queue that
-      survives a refresh, flushed with backoff to Supabase and/or Sheets.
+   3. PERSISTENCE: localStorage session/answers plus a durable write queue
+      that survives a refresh, flushed with backoff to Supabase and/or
+      Sheets.
    ========================================================================== */
-const LS_KEY = 'erc_session_v1';
-const LS_QUEUE_KEY = 'erc_write_queue_v1';
+const LS_KEY = 'erc_session_v2';
+const LS_QUEUE_KEY = 'erc_write_queue_v2';
 
 function loadLocal() {
   try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; }
 }
 function saveLocal(data) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage full/unavailable — non-fatal */ }
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage full or unavailable, non-fatal */ }
 }
 function loadQueue() {
   try { return JSON.parse(localStorage.getItem(LS_QUEUE_KEY)) || []; } catch { return []; }
@@ -595,7 +707,7 @@ function queueWrite(payload) {
   const q = loadQueue();
   q.push({ ...payload, _queuedAt: Date.now(), _id: uuid() });
   saveQueue(q);
-  flushQueue(); // fire and forget — failures stay queued for the next trigger
+  flushQueue(); // fire and forget; failures stay queued for the next trigger
 }
 
 let flushing = false;
@@ -609,7 +721,7 @@ async function flushQueue() {
       try {
         await withBackoff(() => sendOne(item), { maxAttempts: 2 }); // quick attempts here; full backoff happens via periodic retry below
       } catch {
-        remaining.push(item); // still failing — keep for later
+        remaining.push(item); // still failing, keep for later
       }
     }
     saveQueue(remaining);
@@ -623,9 +735,9 @@ async function sendOne(item) {
   if (supabaseClient) jobs.push(sendToSupabase(item));
   if (isConfigured.sheets) jobs.push(sendToSheets(item));
   if (jobs.length === 0) return; // demo mode: localStorage only, nothing to send
-  // Both destinations are best-effort and independent — one failing
-  // shouldn't block the other, so we await both and only re-throw if
-  // BOTH failed (meaning the item truly needs to stay queued).
+  // Both destinations are best-effort and independent, so one failing
+  // shouldn't block the other: await both, and only re-throw if BOTH
+  // failed (meaning the item truly needs to stay queued).
   const results = await Promise.allSettled(jobs);
   if (results.every(r => r.status === 'rejected')) {
     throw results[0].reason;
@@ -670,25 +782,32 @@ setInterval(flushQueue, 15000);
 window.addEventListener('online', flushQueue);
 
 /* ============================================================================
-   4. FLOW DATA — every question, as data. See the header comment for how
+   4. FLOW DATA: every question, as data. See the header comment for how
       the branching maps back to the original Google Form's sections.
    ========================================================================== */
 
 const PROGRAMMES_UG = ['B.Tech.', 'B.Arch.', 'Integrated M.Tech. / Integrated M.Sc. (5-year)'];
 const PROGRAMMES_PG = ['M.Tech.', 'M.Sc. (2-year)', 'MBA', 'M.Des. / other Master’s', 'Ph.D.'];
+const DEPARTMENT_SUGGESTIONS = [
+  'Production & Industrial Engineering', 'Mechanical Engineering', 'Civil Engineering',
+  'Electrical Engineering', 'Electronics & Communication Engineering', 'Computer Science & Engineering',
+  'Chemical Engineering', 'Metallurgical & Materials Engineering', 'Architecture & Planning',
+  'Earth Sciences', 'Earthquake Engineering', 'Hydrology', 'Paper Technology',
+  'Water Resources Development & Management', 'Management Studies (DoMS)', 'Physics', 'Chemistry', 'Mathematics',
+];
 
 const TIER0 = [
   {
-    id: 'welcome', tier: 0, type: 'info',
-    eyebrow: 'Exchange Reality Check', title: 'Quick guess before anything else.',
-    subtitle: 'Two minutes, mostly tapping. No right answers — if you’ve never heard of any of this, you’re exactly who we want to hear from.',
-    icon: '✈️', primaryLabel: 'Start',
+    id: 'welcome', tier: 0, type: 'checkin',
+    title: 'Let’s check you in.',
+    subtitle: 'Two minutes, mostly tapping. There are no right answers here. If you’ve never heard of any of this, you’re exactly who we want to hear from.',
+    namePlaceholder: 'Name, as you’d like it on your boarding pass', primaryLabel: 'Begin check-in',
   },
   {
     id: 'q10_cost_guess', tier: 0, type: 'slider',
-    title: 'What would one semester abroad cost an IITR student — tuition, flights, visa, rent, food, everything?',
+    title: 'What would one semester abroad cost an IITR student? Think tuition, flights, visa, rent and food. Everything.',
     subtitle: 'Guess even if you have no idea. We’ll show you how close you were in a minute.',
-    min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'No idea — just guessing',
+    min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'No idea, just guessing',
   },
   {
     id: 'q12_confidence', tier: 0, type: 'scale',
@@ -698,7 +817,7 @@ const TIER0 = [
   {
     id: 'q11_cost_reasoning', tier: 0, type: 'long_text', optional: true,
     title: 'How did you land on that figure?',
-    placeholder: 'Even one line about your logic helps — or skip this.',
+    placeholder: 'Even one line about your logic helps, or skip this.',
   },
   {
     id: 'q8_awareness', tier: 0, type: 'single',
@@ -711,16 +830,16 @@ const TIER0 = [
     options: [...PROGRAMMES_UG, ...PROGRAMMES_PG],
   },
   {
-    id: 'q3_year', tier: 0, type: 'single',
-    title: 'Which year of that programme are you currently in?',
+    id: 'q3_year', tier: 0, type: 'single', layout: 'row',
+    title: 'Which year of that programme are you in?',
     options: ['1st', '2nd', '3rd', '4th', '5th', '6th'],
   },
   {
-    id: 'q4_department', tier: 0, type: 'short_text',
-    title: 'Department / branch?', placeholder: 'e.g. Production & Industrial Engineering',
+    id: 'q4_department', tier: 0, type: 'short_text', suggestions: DEPARTMENT_SUGGESTIONS,
+    title: 'Department or branch?', placeholder: 'Start typing, or type your own',
   },
   {
-    id: 'q5_gender', tier: 0, type: 'single', optional: true,
+    id: 'q5_gender', tier: 0, type: 'single', layout: 'row', optional: true,
     title: 'Gender', options: ['Female', 'Male', 'Prefer not to say'],
   },
   {
@@ -758,7 +877,7 @@ const TIER1 = [
   },
   {
     id: 'q13_who_handles', tier: 1, type: 'short_text',
-    title: 'Who at IITR handles this — which office, or which person?',
+    title: 'Who at IITR handles this? Which office, or which person?',
     quickFill: 'Don’t know', placeholder: 'Office or name, or tap "Don’t know"',
   },
   {
@@ -767,7 +886,7 @@ const TIER1 = [
     options: ['Yes, and I know roughly what it is', 'Yes, there’s definitely a cutoff, but I don’t know what', 'I don’t think there is one', 'No idea'],
   },
   {
-    id: 'q14_detail', tier: 1, type: 'short_text',
+    id: 'q14_detail', tier: 1, type: 'short_text', inputMode: 'decimal',
     condition: (a) => a.q14_cgpa_requirement === 'Yes, and I know roughly what it is',
     title: 'What’s the cutoff, roughly?', placeholder: 'e.g. 7.0 CGPA',
   },
@@ -810,16 +929,16 @@ const BRANCH_A = [ // never applied (Q18 options 1-2)
   { id: 'q22_barriers', tier: 2, type: 'multi_chips',
     title: 'Which of these have stopped you, if any? Tick all that apply.',
     options: [
-      'The cost', 'I don’t think my CGPA is good enough', 'I don’t know how to start / where to even look',
+      'The cost', 'I don’t think my CGPA is good enough', 'I don’t know how to start or where to even look',
       'It would delay my graduation', 'It would clash with placements or internships', 'Family wouldn’t be comfortable with it',
       'I’d fall behind my batch in coursework', 'I’m not confident about language or living alone abroad',
       'I don’t know anyone who’s done it', 'I assumed I wasn’t eligible', 'I just never thought about it',
-      'Nothing has stopped me — I still might apply', 'Other',
+      'Nothing has stopped me, I still might apply', 'Other',
     ], allowOtherText: true },
   { id: 'q23_biggest_barrier', tier: 2, type: 'single_from_prior', sourceQuestion: 'q22_barriers',
     title: 'Of everything you ticked, which single one is the biggest?' },
   { id: 'q24_if_removed', tier: 2, type: 'single',
-    title: 'If that one thing were completely removed — imagine it simply doesn’t apply to you — would you apply?',
+    title: 'Imagine that one thing is completely gone. Would you apply?',
     options: ['Yes, I’d apply', 'Probably, but something else would still be in the way', 'No, I still wouldn’t'] },
   { id: 'q24_detail_probably', tier: 2, type: 'short_text',
     condition: (a) => a.q24_if_removed === 'Probably, but something else would still be in the way',
@@ -838,25 +957,25 @@ const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
   { id: 'q26_how_far', tier: 2, type: 'multi_chips',
     title: 'How far did you get? Tick everything you actually did.',
     options: [
-      'Read an email or notice about it', 'Searched online / looked at partner university sites',
+      'Read an email or notice about it', 'Searched online or looked at partner university sites',
       'Talked to a senior or friend who’d been', 'Visited or emailed the IR office', 'Shortlisted universities',
-      'Tried to map courses / check credit transfer', 'Spoke to my department or DAPC', 'Started filling the application',
-      'Arranged documents (transcripts, LOR, SOP)', 'Applied for funding or a scholarship', 'Submitted the application',
+      'Tried to map courses or check credit transfer', 'Spoke to my department or DAPC', 'Started filling the application',
+      'Arranged documents, like transcripts, LOR or SOP', 'Applied for funding or a scholarship', 'Submitted the application',
     ] },
   { id: 'q27_moment_stopped', tier: 2, type: 'long_text',
     title: 'What was the moment you stopped? Describe what was actually happening.' },
   { id: 'q28_decision_or_fade', tier: 2, type: 'single',
     title: 'Was it a decision, or did it just fade?',
-    options: ['I made a decision not to continue', 'It just faded — I got busy and it slipped', 'I missed a deadline', 'I was rejected or not selected', 'I got selected but chose not to go'] },
+    options: ['I made a decision not to continue', 'It just faded, I got busy and it slipped', 'I missed a deadline', 'I was rejected or not selected', 'I got selected but chose not to go'] },
   { id: 'q29_biggest_blocker', tier: 2, type: 'single',
     title: 'What was the single biggest blocker?',
-    options: ['Cost / funding', 'Course mapping or credit transfer', 'Departmental / DAPC approval', 'Missing or unclear information',
+    options: ['Cost or funding', 'Course mapping or credit transfer', 'Departmental or DAPC approval', 'Missing or unclear information',
       'Deadline passed', 'CGPA or eligibility', 'Placement or internship clash', 'Family', 'Visa or paperwork', 'Changed my mind about wanting to go', 'Other'] },
   { id: 'q29_detail_other', tier: 2, type: 'short_text', condition: (a) => a.q29_biggest_blocker === 'Other',
     title: 'What was it?' },
   { id: 'q30_hard_wall', tier: 2, type: 'single',
     title: 'Was that blocker a hard wall, or something you might have got past with better information or help?',
-    options: ['Hard wall — nothing would have changed it', 'Better information would probably have got me through',
+    options: ['A hard wall, nothing would have changed it', 'Better information would probably have got me through',
       'Help from a person who’d done it would have got me through', 'Both of the above', 'Not sure'] },
   { id: 'q31_info_search', tier: 2, type: 'multi_chips',
     title: 'When you looked for information, what happened?',
@@ -866,33 +985,33 @@ const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
     title: 'Was there anything you believed at the time that turned out to be wrong?' },
   { id: 'q33_would_have_gone', tier: 2, type: 'scale',
     title: 'Would you have gone if the process had been clearer?', scaleLabels: ['no', 'definitely'] },
-  { id: 'q34_willing_to_talk', tier: 2, type: 'single',
+  { id: 'q34_willing_to_talk', tier: 2, type: 'single', layout: 'row',
     title: 'Would you be willing to talk to us for 20 minutes about what happened?', options: ['Yes', 'No'] },
-  { id: 'q34_contact', tier: 2, type: 'short_text', condition: (a) => a.q34_willing_to_talk === 'Yes',
+  { id: 'q34_contact', tier: 2, type: 'short_text', inputType: 'tel', condition: (a) => a.q34_willing_to_talk === 'Yes',
     title: 'Phone or WhatsApp number', placeholder: 'So we can reach out' },
 ];
 
 const BRANCH_C = [ // went / going now (Q18 option 6)
   { id: 'c_intro', tier: 2, type: 'info',
-    title: 'You’re the rarest and most useful group answering this — thank you.',
-    subtitle: 'A few of these ask for numbers; rough is completely fine.', primaryLabel: 'Continue' },
+    title: 'You’re the rarest and most useful group answering this. Thank you.',
+    subtitle: 'A few of these ask for numbers. Rough is completely fine.', primaryLabel: 'Continue' },
   { id: 'q35_university_country_term', tier: 2, type: 'short_text',
-    title: 'Which university, which country, and which semester/year?' },
+    title: 'Which university, which country, and which semester or year?' },
   { id: 'q36_total_cost', tier: 2, type: 'short_text',
     title: 'Roughly what did the whole thing cost you, all in, in rupees?' },
   { id: 'q37_cost_breakdown', tier: 2, type: 'long_text',
-    title: 'Break that down as best you can — tuition, flights, visa, insurance, rent, food, local transport, setup, travel.' },
+    title: 'Break that down as best you can: tuition, flights, visa, insurance, rent, food, local transport, setup, travel.' },
   { id: 'q38_blindsided_cost', tier: 2, type: 'long_text', optional: true,
-    title: 'What cost blindsided you — something you hadn’t budgeted for?' },
+    title: 'What cost blindsided you? Something you hadn’t budgeted for.' },
   { id: 'q39_funding', tier: 2, type: 'multi_chips',
     title: 'How did you fund it?',
-    options: ['Family', 'Scholarship from the host university', 'Indian government / institute scholarship', 'Education loan',
+    options: ['Family', 'Scholarship from the host university', 'Indian government or institute scholarship', 'Education loan',
       'Savings or personal earnings', 'Fee waiver from the host', 'Other'], allowOtherText: true },
   { id: 'q40_mapping_experience', tier: 2, type: 'single',
     title: 'How did course mapping and credit transfer actually go?',
-    options: ['Smooth — everything mapped', 'Mostly fine, with some back and forth', 'Difficult — I lost credits or had to repeat something', 'Still unresolved', 'N/A'] },
+    options: ['Smooth, everything mapped', 'Mostly fine, with some back and forth', 'Difficult, I lost credits or had to repeat something', 'Still unresolved', 'N/A'] },
   { id: 'q41_mapping_story', tier: 2, type: 'long_text',
-    title: 'Tell us what actually happened with mapping and your department/DAPC — the part nobody warns you about.' },
+    title: 'Tell us what actually happened with mapping and your department or DAPC. The part nobody warns you about.' },
   { id: 'q42_wish_known', tier: 2, type: 'long_text',
     title: 'What’s one thing you wish you’d known before you left?' },
   { id: 'q43_how_found_out', tier: 2, type: 'short_text',
@@ -902,32 +1021,34 @@ const BRANCH_C = [ // went / going now (Q18 option 6)
   { id: 'q45_junior_contact', tier: 2, type: 'single',
     title: 'Would you let juniors contact you with questions?', options: ['Yes, happy to', 'Yes, but only over email', 'No'] },
   { id: 'q45_contact_detail', tier: 2, type: 'short_text', condition: (a) => a.q45_junior_contact === 'Yes, happy to',
-    title: 'Phone / WhatsApp / email', placeholder: 'However juniors should reach you' },
+    title: 'Phone, WhatsApp or email', placeholder: 'However juniors should reach you' },
 ];
 
 const TIER3 = [ // everyone converges here (original Section 8, "Closing")
   { id: 'q46_conversation_at_home', tier: 3, type: 'long_text',
     title: 'Would spending a semester abroad need a conversation at home? How do you think it would go?' },
   { id: 'q47_how_find_opportunities', tier: 3, type: 'multi_chips',
-    title: 'How do you actually find out about opportunities on campus — scholarships, internships, competitions?',
-    options: ['Institute email', 'Channel i', 'WhatsApp groups', 'Seniors telling me directly', 'Instagram / social media',
+    title: 'How do you actually find out about opportunities on campus? Scholarships, internships, competitions.',
+    options: ['Institute email', 'Channel i', 'WhatsApp groups', 'Seniors telling me directly', 'Instagram or social media',
       'Posters and noticeboards', 'Department or faculty', 'Friends', 'I mostly find out late or not at all'] },
   { id: 'q48_missed_too_late', tier: 3, type: 'long_text', optional: true,
     title: 'Have you missed something this year that you’d have wanted, purely because you found out too late?' },
   { id: 'q49_apply_if', tier: 3, type: 'long_text',
     title: 'What would have to be true for you to seriously apply? Finish the sentence: "I’d apply if…"' },
   { id: 'q50_single_page_usefulness', tier: 3, type: 'scale',
-    title: 'If a single page existed with everything at one place — real costs, real universities, real deadlines, and students you could ask — how useful would that be to you?',
+    title: 'Imagine one page with everything on it: real costs, real universities, real deadlines, and students you could ask. How useful would that be to you?',
     scaleLabels: ['not useful', 'I’d use it today'] },
   { id: 'q51_anything_else', tier: 3, type: 'long_text', optional: true,
     title: 'Anything else you want to say about this?' },
-  { id: 'q52_contact_ok', tier: 3, type: 'single',
+  { id: 'q52_contact_ok', tier: 3, type: 'single', layout: 'row',
     title: 'Can we contact you if we have follow-up questions?', options: ['Yes', 'Yes, email is fine', 'No thanks'] },
-  { id: 'q52_contact_detail', tier: 3, type: 'short_text', condition: (a) => a.q52_contact_ok === 'Yes',
+  { id: 'q52_contact_detail', tier: 3, type: 'short_text', inputType: 'tel',
+    condition: (a) => a.q52_contact_ok === 'Yes',
     title: 'Phone or WhatsApp' },
   { id: 'email_signup', tier: 3, type: 'short_text', inputType: 'email',
-    title: 'Last thing — where should we send the real numbers once we have them?',
-    subtitle: 'The partner list, real costs, and your boarding pass below.', placeholder: 'you@iitr.ac.in', optional: true },
+    title: 'Last thing. Where should we send the real numbers once we have them?',
+    subtitle: 'The partner list, real costs, and your boarding pass are on their way. We need your email to send them.',
+    placeholder: 'you@iitr.ac.in' },
 ];
 
 /* ============================================================================
@@ -974,7 +1095,7 @@ function routeBranch(q18answer) {
 }
 
 /* ============================================================================
-   6. ROUTER — walks TIER0 -> TIER1 -> (branch A/B/C) -> TIER3 -> debrief,
+   6. ROUTER: walks TIER0 -> TIER1 -> (branch A/B/C) -> TIER3 -> debrief,
       skipping any step whose condition() fails.
    ========================================================================== */
 function branchList() {
@@ -1006,7 +1127,7 @@ function advancePointer(from) {
       index++;
       continue;
     }
-    // list exhausted -> move to next tier
+    // list exhausted, move to next tier
     if (tier === 0) { tier = 1; index = 0; continue; }
     if (tier === 1) { tier = 2; index = 0; if (branchList().length === 0) { tier = 3; index = 0; } continue; }
     if (tier === 2) { tier = 3; index = 0; continue; }
@@ -1036,11 +1157,22 @@ function retreatPointer(from) {
    ========================================================================== */
 const stage = document.getElementById('stepStage');
 const backBtn = document.getElementById('backBtn');
-const tierChip = document.getElementById('tierChip');
+const headerStatus = document.getElementById('headerStatus');
 const progressFill = document.getElementById('progressFill');
-const progressPlane = document.getElementById('progressPlane');
+const sideHeadline = document.getElementById('sideHeadline');
+const sideStatusValue = document.getElementById('sideStatusValue');
+const sidePassenger = document.getElementById('sidePassenger');
+const sideProgress = document.getElementById('sideProgress');
+const routePlane = document.getElementById('routePlane');
+const routeDestLabel = document.getElementById('routeDestLabel');
 
-const TIER_LABELS = { 0: 'Intro', 1: 'Quick check', 2: 'Your story', 3: 'Closing' };
+const TIER_LABELS = { 0: 'Check-in', 1: 'Quick check', 2: 'Your story', 3: 'Closing' };
+const SIDE_HEADLINES = {
+  0: 'Let’s see where this goes.',
+  1: 'A few things worth checking.',
+  2: { A: 'What’s actually in the way?', B: 'Where did it break down?', C: 'Tell us how it really went.' },
+  3: 'Almost at the gate.',
+};
 
 backBtn.onclick = () => {
   const prev = retreatPointer(session.pointer);
@@ -1053,7 +1185,7 @@ function render() {
   if (!step) { renderDebrief(); return; }
 
   session.furthestTier = Math.max(session.furthestTier, step.tier);
-  tierChip.textContent = TIER_LABELS[step.tier] || '';
+  headerStatus.textContent = TIER_LABELS[step.tier] || '';
   backBtn.classList.toggle('visible', !(session.pointer.tier === 0 && session.pointer.index === 0));
   updateProgress(step.tier);
 
@@ -1062,7 +1194,7 @@ function render() {
   stage.appendChild(card);
 
   const renderers = {
-    info: renderInfo, slider: renderSlider, scale: renderScale, single: renderSingle,
+    checkin: renderCheckin, info: renderInfo, slider: renderSlider, scale: renderScale, single: renderSingle,
     multi_chips: renderMultiChips, short_text: renderText, long_text: renderText,
     reveal: renderReveal, single_from_prior: renderSingleFromPrior,
   };
@@ -1082,8 +1214,9 @@ function commitAndAdvance(step, value) {
 }
 
 function updateProgress(currentTier) {
-  // Rough estimate: completed steps so far / (steps so far + remaining in current tier
-  // + remaining tiers' lengths). Recomputed each render since branch length varies.
+  // Rough estimate: completed steps so far / (steps so far + remaining in
+  // current tier + remaining tiers' lengths). Recomputed each render since
+  // branch length is zero until Q18 is answered.
   const tiersOrder = [0, 1, 2, 3];
   let totalKnown = 0, doneKnown = 0;
   for (const t of tiersOrder) {
@@ -1092,25 +1225,56 @@ function updateProgress(currentTier) {
     if (t < currentTier) doneKnown += len;
     else if (t === currentTier) doneKnown += session.pointer.index;
   }
-  const pct = Math.min(96, Math.max(4, Math.round((doneKnown / Math.max(1, totalKnown)) * 100)));
+  const pct = Math.min(96, Math.max(3, Math.round((doneKnown / Math.max(1, totalKnown)) * 100)));
   progressFill.style.width = pct + '%';
-  progressPlane.style.left = pct + '%';
+  routePlane.style.left = pct + '%';
+  sideProgress.textContent = `Q ${doneKnown + 1} / ${totalKnown}`;
+  sideStatusValue.textContent = TIER_LABELS[currentTier] || '';
+  sidePassenger.textContent = (session.answers.respondent_name || 'TBD').toUpperCase();
+  let headline = SIDE_HEADLINES[currentTier];
+  if (headline && typeof headline === 'object') headline = headline[session.branch] || 'Tell us how it really went.';
+  sideHeadline.textContent = headline || sideHeadline.textContent;
 }
 
-/* ---- info / welcome ---- */
+/* ---- check-in (welcome + name) ---- */
+function renderCheckin(card, step) {
+  card.appendChild(el('div', 'step-title', step.title));
+  card.appendChild(el('div', 'step-subtitle', step.subtitle));
+
+  const label = el('label', 'field-label', 'Your name');
+  card.appendChild(label);
+  const input = document.createElement('input');
+  input.className = 'text-input'; input.type = 'text';
+  input.placeholder = step.namePlaceholder || 'Your name';
+  input.value = session.answers.respondent_name || '';
+  card.appendChild(input);
+
+  const row = el('div', 'action-row');
+  const btn = el('button', 'btn btn-primary btn-full', step.primaryLabel || 'Continue');
+  btn.disabled = input.value.trim().length === 0;
+  input.addEventListener('input', () => { btn.disabled = input.value.trim().length === 0; });
+  btn.onclick = () => {
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    recordAnswer('respondent_name', name);
+    goNext();
+  };
+  row.appendChild(btn);
+  card.appendChild(row);
+}
+
+/* ---- info ---- */
 function renderInfo(card, step) {
-  if (step.icon) card.appendChild(el('div', 'info-icon', step.icon));
-  if (step.eyebrow) card.appendChild(el('div', 'step-eyebrow', step.eyebrow));
   card.appendChild(el('div', 'step-title', step.title));
   if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
   const row = el('div', 'action-row');
-  const btn = el('button', 'btn btn-primary', step.primaryLabel || 'Continue');
+  const btn = el('button', 'btn btn-primary btn-full', step.primaryLabel || 'Continue');
   btn.onclick = () => commitAndAdvance(step, undefined);
   row.appendChild(btn);
   card.appendChild(row);
 }
 
-/* ---- slider (Q10) ---- */
+/* ---- slider (Q10), paired with an exact-amount field ---- */
 function renderSlider(card, step) {
   card.appendChild(el('div', 'step-title', step.title));
   if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
@@ -1124,17 +1288,37 @@ function renderSlider(card, step) {
 
   const input = document.createElement('input');
   input.type = 'range'; input.min = step.min; input.max = step.max; input.step = step.step; input.value = value;
-  input.oninput = () => { value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit); if (noIdea) setNoIdea(false); };
   card.appendChild(input);
 
+  const exactRow = el('div', 'exact-amount-row');
+  exactRow.appendChild(el('label', null, step.unit));
+  const exactInput = document.createElement('input');
+  exactInput.className = 'exact-amount-input'; exactInput.type = 'text'; exactInput.inputMode = 'numeric';
+  exactInput.value = Number(value).toLocaleString('en-IN');
+  exactRow.appendChild(exactInput);
+  card.appendChild(exactRow);
+
+  input.oninput = () => {
+    value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit);
+    exactInput.value = value.toLocaleString('en-IN');
+    if (noIdea) setNoIdea(false);
+  };
+  exactInput.oninput = () => {
+    const digits = exactInput.value.replace(/[^\d]/g, '');
+    const n = Math.min(step.max, Math.max(step.min, Number(digits) || 0));
+    value = n; valueEl.textContent = formatMoney(value, step.unit); input.value = n;
+    if (noIdea) setNoIdea(false);
+  };
+  exactInput.onblur = () => { exactInput.value = value.toLocaleString('en-IN'); };
+
   const noIdeaBtn = el('button', 'no-idea-btn' + (noIdea ? ' active' : ''), step.noIdeaLabel || 'No idea');
-  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; }
+  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; exactInput.style.opacity = v ? '0.4' : '1'; }
   setNoIdea(noIdea);
   noIdeaBtn.onclick = () => setNoIdea(!noIdea);
   card.appendChild(noIdeaBtn);
 
   const row = el('div', 'action-row');
-  const btn = el('button', 'btn btn-primary', 'Continue');
+  const btn = el('button', 'btn btn-primary btn-full', 'Continue');
   btn.onclick = () => commitAndAdvance(step, { value: noIdea ? null : value, no_idea: noIdea });
   row.appendChild(btn);
   card.appendChild(row);
@@ -1161,30 +1345,41 @@ function renderScale(card, step) {
 function highlightThen(node, container, siblingSelector, cb) {
   container.querySelectorAll(siblingSelector).forEach(n => n.classList.remove('selected'));
   node.classList.add('selected');
-  setTimeout(cb, 260);
+  setTimeout(cb, 240);
 }
 
-/* ---- single choice (auto-advance) ---- */
+/* ---- single choice (auto-advance); 'row' layout renders compact pills ---- */
 function renderSingle(card, step) {
   card.appendChild(el('div', 'step-title', step.title));
   if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
-  const list = el('div', 'options-list');
   const existing = session.answers[step.id];
-  step.options.forEach(opt => {
-    const card_ = el('button', 'option-card' + (existing === opt ? ' selected' : ''));
-    card_.appendChild(el('span', 'option-dot'));
-    card_.appendChild(el('span', null, opt));
-    card_.onclick = () => highlightThen(card_, list, '.option-card', () => commitAndAdvance(step, opt));
-    list.appendChild(card_);
-  });
-  card.appendChild(list);
+
+  if (step.layout === 'row') {
+    const row = el('div', 'options-row');
+    step.options.forEach(opt => {
+      const pill = el('button', 'option-pill' + (existing === opt ? ' selected' : ''), opt);
+      pill.onclick = () => highlightThen(pill, row, '.option-pill', () => commitAndAdvance(step, opt));
+      row.appendChild(pill);
+    });
+    card.appendChild(row);
+  } else {
+    const list = el('div', 'options-list');
+    step.options.forEach(opt => {
+      const card_ = el('button', 'option-card' + (existing === opt ? ' selected' : ''));
+      card_.appendChild(el('span', 'option-dot'));
+      card_.appendChild(el('span', null, opt));
+      card_.onclick = () => highlightThen(card_, list, '.option-card', () => commitAndAdvance(step, opt));
+      list.appendChild(card_);
+    });
+    card.appendChild(list);
+  }
   if (step.optional) card.appendChild(skipRow(step));
 }
 
 /* ---- single choice built from a prior multi-select answer (Q23) ---- */
 function renderSingleFromPrior(card, step) {
   const source = session.answers[step.sourceQuestion];
-  const options = (source && source.length) ? source : ['Nothing has stopped me — I still might apply'];
+  const options = (source && source.length) ? source : ['Nothing has stopped me, I still might apply'];
   renderSingle(card, { ...step, options, optional: false });
 }
 
@@ -1211,14 +1406,14 @@ function renderMultiChips(card, step) {
 
   if (step.allowOtherText) {
     otherInput = document.createElement('input');
-    otherInput.className = 'text-input'; otherInput.placeholder = 'Please specify…';
+    otherInput.className = 'text-input'; otherInput.placeholder = 'Please specify';
     otherInput.style.display = existing.has('Other') ? 'block' : 'none';
     otherInput.value = otherText;
     card.appendChild(otherInput);
   }
 
   const row = el('div', 'action-row');
-  const btn = el('button', 'btn btn-primary', 'Continue');
+  const btn = el('button', 'btn btn-primary btn-full', 'Continue');
   btn.onclick = () => {
     const values = Array.from(existing);
     recordAnswer(step.id, values);
@@ -1230,6 +1425,7 @@ function renderMultiChips(card, step) {
 }
 
 /* ---- text (short / long) ---- */
+let datalistCounter = 0;
 function renderText(card, step) {
   card.appendChild(el('div', 'step-title', step.title));
   if (step.subtitle) card.appendChild(el('div', 'step-subtitle', step.subtitle));
@@ -1237,8 +1433,19 @@ function renderText(card, step) {
   const input = document.createElement(step.type === 'long_text' ? 'textarea' : 'input');
   input.className = step.type === 'long_text' ? 'textarea-input' : 'text-input';
   if (step.type === 'short_text') input.type = step.inputType || 'text';
+  if (step.inputMode) input.inputMode = step.inputMode;
   input.placeholder = step.placeholder || '';
   input.value = session.answers[step.id] || '';
+
+  if (step.suggestions && step.suggestions.length) {
+    const listId = 'dl_' + step.id + '_' + (datalistCounter++);
+    const dl = document.createElement('datalist');
+    dl.id = listId;
+    step.suggestions.forEach(s => { const o = document.createElement('option'); o.value = s; dl.appendChild(o); });
+    card.appendChild(dl);
+    input.setAttribute('list', listId);
+  }
+
   card.appendChild(input);
 
   if (step.quickFill) {
@@ -1259,11 +1466,13 @@ function renderText(card, step) {
   btn.onclick = () => {
     const v = input.value.trim();
     if (!step.optional && v.length === 0) { input.focus(); showToast('Type something, or use the quick option above.'); return; }
+    if (step.inputType === 'email' && !isValidEmail(v)) { input.focus(); showToast('Enter a valid email so we can send you the results.'); return; }
     commitAndAdvance(step, v);
   };
   row.appendChild(btn);
   card.appendChild(row);
 }
+function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
 function skipRow(step) {
   const row = el('div', 'action-row');
@@ -1291,7 +1500,7 @@ async function renderReveal(card, step) {
   const stats = await fetchStatsFor(step.statsFor);
   statWrap.innerHTML = '';
   if (!stats.length) {
-    statWrap.appendChild(el('div', 'step-subtitle', 'You’re one of the first to answer — thank you. We’ll have real comparisons soon.'));
+    statWrap.appendChild(el('div', 'step-subtitle', 'You’re one of the first to answer. Thank you! We’ll have real comparisons soon.'));
     return;
   }
   stats.forEach(s => {
@@ -1347,10 +1556,10 @@ async function buildUnlockBar() {
       const started = data?.started || 0;
       const pct = Math.min(100, Math.round(100 * started / CONFIG.unlockTarget));
       fill.style.width = pct + '%';
-      label.textContent = `${started} of ${CONFIG.unlockTarget} responses — real costs & the partner list unlock then.`;
-    } catch { label.textContent = 'Real costs & the partner list unlock once we have enough responses.'; }
+      label.textContent = `${started} of ${CONFIG.unlockTarget} responses. Real costs and the partner list unlock then.`;
+    } catch { label.textContent = 'Real costs and the partner list unlock once we have enough responses.'; }
   } else {
-    label.textContent = 'Real costs & the partner list unlock once we have enough responses.';
+    label.textContent = 'Real costs and the partner list unlock once we have enough responses.';
   }
   return wrap;
 }
@@ -1376,14 +1585,23 @@ function renderDebrief() {
 
   stage.innerHTML = '';
   backBtn.classList.remove('visible');
-  tierChip.textContent = 'Done';
-  progressFill.style.width = '100%'; progressPlane.style.left = '98%';
+  headerStatus.textContent = 'Done';
+  progressFill.style.width = '100%';
+  routePlane.style.left = '98%';
+  sideStatusValue.textContent = statusForBranch();
+  routeDestLabel.textContent = statusForBranch();
+  sideHeadline.textContent = 'Boarding pass ready.';
 
   const card = el('div', 'step-card');
-  card.appendChild(el('div', 'info-icon', '🎉'));
-  card.appendChild(el('div', 'step-title', 'Thank you — genuinely.'));
+
+  const stamp = el('div', 'stamp');
+  stamp.appendChild(el('div', 'stamp-line1', 'Checked'));
+  stamp.appendChild(el('div', 'stamp-line2', 'In'));
+  card.appendChild(stamp);
+
+  card.appendChild(el('div', 'step-title', 'Thank you, genuinely.'));
   card.appendChild(el('div', 'step-subtitle',
-    'IITR does have semester exchange agreements with universities abroad, run through the International Relations office. Applications typically open early in the calendar year. We’re deliberately not naming numbers yet — that’s what this survey is for — but we’ll send what we find to the email you gave us.'));
+    'IITR does have semester exchange agreements with universities abroad, run through the International Relations office. Applications typically open early in the calendar year. We’re deliberately not naming numbers yet. That’s what this survey is for, but we’ll send what we find to the email you gave us.'));
 
   card.appendChild(buildBoardingPass());
 
@@ -1394,65 +1612,132 @@ function renderDebrief() {
   card.appendChild(shareRow);
 
   card.appendChild(el('div', 'step-subtitle',
-    'If you know someone who’s been on exchange, or who started an application and dropped it — please send them this. Those two groups are the hardest for us to reach and the most useful to hear from.'));
+    'If you know someone who’s been on exchange, or who started an application and dropped it, please send them this. Those two groups are the hardest for us to reach and the most useful to hear from.'));
 
   stage.appendChild(card);
 }
 
-function buildBoardingPass() {
-  const bp = el('div', 'boarding-pass'); bp.id = 'boardingPassCard';
-  const row = el('div', 'bp-row');
-  const left = el('div');
-  left.appendChild(el('div', 'bp-eyebrow', 'Exchange Reality Check'));
-  left.appendChild(el('div', 'bp-title', categoryLabel()));
-  row.appendChild(left);
-  row.appendChild(el('div', 'info-icon', '✈️'));
-  bp.appendChild(row);
-  bp.appendChild(el('div', 'bp-divider'));
-
-  const stats = el('div', 'bp-stats');
-  const guess = session.answers.q10_cost_guess;
-  addStat(stats, 'Your guess', guess && !guess.no_idea ? formatMoney(guess.value, '₹') : 'No idea');
-  addStat(stats, 'Awareness', session.answers.q8_awareness || '—');
-  addStat(stats, 'Would use a single info page', session.answers.q50_single_page_usefulness ? session.answers.q50_single_page_usefulness + ' / 5' : '—');
-  addStat(stats, 'Programme', session.answers.q2_programme || '—');
-  bp.appendChild(stats);
-  return bp;
+function statusForBranch() {
+  return { A: 'Standby', B: 'Delayed', C: 'Boarded' }[session.branch] || 'Checked in';
 }
-function addStat(container, label, value) {
-  const d = el('div');
-  d.appendChild(el('div', 'bp-stat-label', label));
-  d.appendChild(el('div', 'bp-stat-value', String(value)));
+
+function sequenceCode() {
+  return 'ERC' + session.session_id.replace(/-/g, '').slice(0, 6).toUpperCase();
+}
+
+function gateCode() {
+  const dept = session.answers.q4_department;
+  if (!dept) return 'TBD';
+  const letters = dept.split(/\s+/).map(w => w.replace(/[^A-Za-z]/g, '')[0]).filter(Boolean).join('').toUpperCase();
+  return letters ? letters.slice(0, 3) : 'TBD';
+}
+
+function destinationField() {
+  if (session.branch === 'C' && session.answers.q35_university_country_term) {
+    return session.answers.q35_university_country_term.toUpperCase();
+  }
+  return 'DESTINATION TBD';
+}
+
+function buildBoardingPass() {
+  const ticket = el('div', 'ticket'); ticket.id = 'boardingPassCard';
+  const body = el('div', 'ticket-body');
+  const main = el('div', 'ticket-main');
+
+  const topline = el('div', 'ticket-topline');
+  topline.appendChild(el('span', null, 'Boarding Pass'));
+  topline.appendChild(el('span', null, 'Exchange Reality Check'));
+  main.appendChild(topline);
+
+  main.appendChild(el('div', 'ticket-passenger-label', 'Passenger'));
+  main.appendChild(el('div', 'ticket-passenger-name', (session.answers.respondent_name || 'Guest').toUpperCase()));
+
+  const grid = el('div', 'ticket-grid');
+  addField(grid, 'From', 'IIT Roorkee (IITR)');
+  addField(grid, 'To', destinationField());
+  addField(grid, 'Status', statusForBranch());
+  addField(grid, 'Gate', gateCode());
+  addField(grid, 'Seq', sequenceCode());
+  addField(grid, 'Date', new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
+  main.appendChild(grid);
+  body.appendChild(main);
+
+  body.appendChild(el('div', 'ticket-divider'));
+
+  const answers = el('div', 'ticket-answers');
+  answers.appendChild(el('div', 'ticket-answers-label', 'Your answers'));
+  const guess = session.answers.q10_cost_guess;
+  addAnswerRow(answers, 'Your cost guess', guess && !guess.no_idea ? formatMoney(guess.value, '₹') : 'No idea');
+  addAnswerRow(answers, 'Awareness', session.answers.q8_awareness || 'N/A');
+  addAnswerRow(answers, 'Would use one info page', session.answers.q50_single_page_usefulness ? session.answers.q50_single_page_usefulness + ' / 5' : 'N/A');
+  addAnswerRow(answers, 'Programme', session.answers.q2_programme || 'N/A');
+  body.appendChild(answers);
+  ticket.appendChild(body);
+
+  ticket.appendChild(el('div', 'ticket-divider'));
+
+  const stub = el('div', 'ticket-stub');
+  const seqBlock = el('div', 'ticket-stub-seq');
+  const seqLabel = el('span', null, 'Sequence');
+  seqBlock.appendChild(seqLabel);
+  seqBlock.appendChild(document.createTextNode(sequenceCode()));
+  stub.appendChild(seqBlock);
+  const barcode = el('div', 'barcode');
+  barcode.style.background = buildBarcodeGradient(session.session_id);
+  stub.appendChild(barcode);
+  ticket.appendChild(stub);
+
+  return ticket;
+}
+function addField(container, label, value) {
+  const d = document.createElement('div');
+  d.appendChild(el('div', 'ticket-field-label', label));
+  d.appendChild(el('div', 'ticket-field-value', String(value)));
   container.appendChild(d);
 }
-function categoryLabel() {
-  return { A: 'Never applied (yet)', B: 'Started, didn’t finish', C: 'Been on exchange' }[session.branch] || 'Took the Reality Check';
+function addAnswerRow(container, label, value) {
+  const row = el('div', 'ticket-answer-row');
+  row.appendChild(el('span', null, label));
+  row.appendChild(el('b', null, String(value)));
+  container.appendChild(row);
+}
+/** A deterministic, unique-looking barcode pattern derived from the session id. */
+function buildBarcodeGradient(seed) {
+  const chars = seed.replace(/-/g, '').split('');
+  let pos = 0; const stops = [];
+  for (let i = 0; i < chars.length && pos < 100; i++) {
+    const barWidth = ((parseInt(chars[i], 16) || 1) % 4) + 1.5;
+    stops.push(`var(--ink) ${pos}%`, `var(--ink) ${pos + barWidth}%`, `transparent ${pos + barWidth}%`, `transparent ${pos + barWidth + 1.2}%`);
+    pos += barWidth + 1.2;
+  }
+  return `repeating-linear-gradient(90deg, ${stops.join(', ')})`;
 }
 
 async function shareBoardingPass() {
   const node = document.getElementById('boardingPassCard');
   try {
-    const canvas = await html2canvas(node, { backgroundColor: null, scale: 2 });
+    const canvas = await html2canvas(node, { backgroundColor: '#F7F1E2', scale: 2 });
     canvas.toBlob(async (blob) => {
-      const file = new File([blob], 'exchange-reality-check.png', { type: 'image/png' });
+      const file = new File([blob], 'exchange-reality-check-boarding-pass.png', { type: 'image/png' });
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'Exchange Reality Check' }); return; } catch { /* user cancelled or unsupported — fall through */ }
+        try { await navigator.share({ files: [file], title: 'Exchange Reality Check' }); return; } catch { /* cancelled or unsupported, fall through */ }
       }
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'exchange-reality-check.png';
+      const a = document.createElement('a'); a.href = url; a.download = 'exchange-reality-check-boarding-pass.png';
       document.body.appendChild(a); a.click(); a.remove();
-      showToast('Saved — share it from your photos.');
+      showToast('Saved. Share it from your photos.');
     }, 'image/png');
   } catch {
-    showToast('Couldn’t generate an image — try a screenshot instead.');
+    showToast('Couldn’t generate an image. Try a screenshot instead.');
   }
 }
 
 /* ============================================================================
    9. OPTIONAL: Gemini-assisted empathetic one-liner after a long free-text
       answer. Off by default (CONFIG.enableReflections). Calls a proxy YOU
-      deploy (never the raw Gemini API from the browser — that would expose
-      your key). Fully non-blocking: a failure here never stops the survey.
+      deploy, never the raw Gemini API from the browser, since that would
+      expose your key. Fully non-blocking: a failure here never stops the
+      survey.
    ========================================================================== */
 async function maybeReflect(step, answerText) {
   if (!CONFIG.enableReflections || !CONFIG.geminiProxyUrl || !answerText || answerText.length < 12) return null;
@@ -1465,7 +1750,7 @@ async function maybeReflect(step, answerText) {
       if (!res.ok) throw new Error('reflection HTTP ' + res.status);
       const data = await res.json();
       return data.reflection || null;
-    }, { maxAttempts: 2 }); // reflections are a nicety — fail fast, don't hold up the flow
+    }, { maxAttempts: 2 }); // reflections are a nicety, fail fast and don't hold up the flow
   } catch { return null; }
 }
 
@@ -1476,15 +1761,15 @@ async function maybeReflect(step, answerText) {
   if (!isConfigured.supabase && !isConfigured.sheets) {
     const banner = document.getElementById('devBanner');
     banner.style.display = 'block';
-    banner.textContent = '⚠️ Demo mode — Supabase/Sheets not configured yet. Answers only save to this browser. See README.md.';
+    banner.textContent = 'Demo mode. Supabase and Sheets aren’t configured yet, so answers only save to this browser. See README.md.';
   }
   // NOTE: session.pointer === null is a meaningful state (the survey is
-  // complete — see advancePointer()'s final `return null` and renderDebrief()).
-  // Only a truly uninitialized session (pointer === undefined, i.e. this
-  // object didn't come from the default literal above or from a prior save)
-  // should be reset to the first step. Treating null and undefined the same
-  // here would bounce a finished respondent back to the welcome screen on
-  // every reload — which is exactly what happened before this comment existed.
+  // complete; see advancePointer()'s final `return null` and
+  // renderDebrief()). Only a truly uninitialized session (pointer ===
+  // undefined, i.e. this object didn't come from the default literal above
+  // or from a prior save) should be reset to the first step. Treating null
+  // and undefined the same here would bounce a finished respondent back to
+  // the welcome screen on every reload.
   if (session.pointer === undefined) session.pointer = { tier: 0, index: 0 };
   if (!session.branch && session.answers.q18_category) session.branch = routeBranch(session.answers.q18_category);
   flushQueue();

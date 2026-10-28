@@ -788,28 +788,36 @@ async function sendOne(item) {
   }
 }
 
+// Writes go through three small database functions (see
+// supabase/2_fix_saving_and_readable_views.sql) rather than straight into
+// the tables. A plain upsert needs read access to the table to detect the
+// existing row, and the public key deliberately has none, so every direct
+// upsert was being rejected. The functions do the upsert server-side while
+// the public key still can't read a single row back.
 async function sendToSupabase(item) {
+  let call;
   if (item.kind === 'session') {
-    const { error } = await supabaseClient.from('sessions').upsert({
-      id: item.session_id, programme: item.programme, year: item.year,
-      department: item.department, is_pg: item.is_pg, branch: item.branch,
-      user_agent: item.user_agent, furthest_tier: item.furthest_tier,
-      completed_at: item.completed_at || null,
-    }, { onConflict: 'id' });
-    if (error) throw error;
+    call = supabaseClient.rpc('save_session', {
+      p_id: item.session_id, p_programme: item.programme ?? null, p_year: item.year ?? null,
+      p_department: item.department ?? null, p_is_pg: item.is_pg ?? null, p_branch: item.branch ?? null,
+      p_user_agent: item.user_agent ?? null, p_furthest_tier: item.furthest_tier ?? 0,
+      p_completed_at: item.completed_at || null,
+    });
   } else if (item.kind === 'answer') {
-    const { error } = await supabaseClient.from('answers').upsert({
-      session_id: item.session_id, question_id: item.question_id, value: item.value,
-    }, { onConflict: 'session_id,question_id' });
-    if (error) throw error;
+    call = supabaseClient.rpc('save_answer', {
+      p_session_id: item.session_id, p_question_id: item.question_id, p_value: item.value ?? null,
+    });
   } else if (item.kind === 'contact') {
-    const { error } = await supabaseClient.from('contacts').upsert({
-      session_id: item.session_id, email: item.email, phone_whatsapp: item.phone_whatsapp,
-      ok_followup_contact: item.ok_followup_contact, ok_junior_contact: item.ok_junior_contact,
-      ok_interview_contact: item.ok_interview_contact,
-    }, { onConflict: 'session_id' });
-    if (error) throw error;
+    call = supabaseClient.rpc('save_contact', {
+      p_session_id: item.session_id, p_email: item.email ?? null, p_phone_whatsapp: item.phone_whatsapp ?? null,
+      p_ok_followup_contact: !!item.ok_followup_contact, p_ok_junior_contact: !!item.ok_junior_contact,
+      p_ok_interview_contact: !!item.ok_interview_contact,
+    });
+  } else {
+    return;
   }
+  const { error } = await call;
+  if (error) throw error;
 }
 
 async function sendToSheets(item) {
@@ -819,6 +827,10 @@ async function sendToSheets(item) {
     body: JSON.stringify({ ...item, created_at: new Date().toISOString() }),
   });
   if (!res.ok) throw new Error('Sheets sync HTTP ' + res.status);
+  // Apps Script always answers 200, even when the script itself failed,
+  // so check what it actually said.
+  const data = await res.json().catch(() => null);
+  if (data && data.ok === false) throw new Error('Sheets sync: ' + data.error);
 }
 
 // Retry whatever's left in the queue periodically and whenever we come back online.
@@ -1562,13 +1574,14 @@ function renderText(card, step) {
 
   card.appendChild(input);
 
-  // Required written answers: no suggested answers (they'd put words in
-  // people's mouths), just a low bar that's easy to clear. A sentence is
-  // enough, you can say it instead of typing it, and Continue unlocks at a
-  // few real words so "idk" or "." can't slip through.
-  const isWritten = step.type === 'long_text' && !step.optional;
+  // Written answers: no suggested answers (they'd put words in people's
+  // mouths) and no minimum length (a one-word answer is still an answer).
+  // Instead, three things invite more detail: you can say it instead of
+  // typing it, a live hint warms up as the answer grows, and a very short
+  // answer gets ONE gentle "say a bit more?" before it goes through.
+  const isWritten = step.type === 'long_text';
   const wordCount = () => input.value.trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
-  const enoughWords = () => !isWritten || wordCount() >= MIN_WRITTEN_WORDS;
+  let nudged = false;
   let hintEl = null;
   if (isWritten) {
     input.placeholder = step.placeholder || 'Type your answer…';
@@ -1597,16 +1610,24 @@ function renderText(card, step) {
   const btn = el('button', 'btn btn-primary btn-full', 'Continue');
   function syncWritten() {
     if (!isWritten) return;
-    const ok = enoughWords();
-    btn.disabled = !ok;
-    hintEl.classList.toggle('ok', ok);
-    hintEl.textContent = ok ? 'That’s perfect. Add more if you like.' : wordCount() === 0 ? 'A sentence is plenty.' : 'A few more words…';
+    const n = wordCount();
+    hintEl.classList.toggle('ok', n >= DETAILED_WORDS);
+    hintEl.textContent = HINT_FOR_LENGTH.find(h => n >= h.min).text;
+    if (nudged && n >= SHORT_ANSWER_WORDS) { btn.textContent = 'Continue'; nudged = false; }
   }
   input.addEventListener('input', syncWritten);
   syncWritten();
   btn.onclick = () => {
     stopVoice();
-    if (!enoughWords()) { input.focus(); return; }
+    const n = isWritten ? wordCount() : 0;
+    if (isWritten && n > 0 && n < SHORT_ANSWER_WORDS && !nudged) {
+      nudged = true;
+      hintEl.classList.remove('ok');
+      hintEl.textContent = 'Could you add why? Even one reason helps us a lot.';
+      btn.textContent = 'Continue anyway';
+      input.focus();
+      return;
+    }
     const v = input.value.trim();
     if (!step.optional && v.length === 0) { input.focus(); showToast(step.quickFill ? 'Type an answer, or tap “' + step.quickFill + '”.' : 'Even a few words helps.'); return; }
     if (step.inputType === 'email' && !isValidEmail(v)) { input.focus(); showToast('Enter a valid email so we can send you the results.'); return; }
@@ -1618,7 +1639,15 @@ function renderText(card, step) {
 }
 function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
-const MIN_WRITTEN_WORDS = 4;
+// Written-answer encouragement (never a requirement).
+const SHORT_ANSWER_WORDS = 5;   // below this, ask once for a bit more
+const DETAILED_WORDS = 15;      // at this point, say thanks
+const HINT_FOR_LENGTH = [
+  { min: DETAILED_WORDS, text: 'Really useful, thank you.' },
+  { min: 6, text: 'Nice. Anything else that comes to mind?' },
+  { min: 1, text: 'Good start. Why do you think that?' },
+  { min: 0, text: 'Your own words, the more detail the better.' },
+];
 
 /* ---- voice input (Web Speech API; Chrome / Android / Safari). Returns null
    where unsupported, so the field quietly stays type-only. ---- */

@@ -19,10 +19,14 @@ bundler, no framework.
 | File | What it is |
 |---|---|
 | `index.html` | The whole app. Open it directly, or host it anywhere static. |
-| `supabase/schema.sql` | The database: tables, Row Level Security policies, and the two public aggregate views that power the live "X% of your batch also..." stats. |
-| `supabase/2_fix_saving_and_readable_views.sql` | Run after `schema.sql`. The save functions the app writes through, plus owner-only readable views (`responses_readable`, `responses_by_day`, `answer_breakdown`). |
+| `setup/1-supabase-tables.sql` | The database: tables, Row Level Security policies, and the two public aggregate views that power the live "X% of your batch also..." stats. |
+| `setup/2-supabase-save-functions.sql` | Run after `1-supabase-tables.sql`. The save functions the app writes through, plus owner-only readable views (`responses_readable`, `responses_by_day`, `answer_breakdown`). |
 | `docs/RESULTS-GUIDE.md` | How to read results in the Sheet and in Supabase, for non-technical owners. |
-| `google-apps-script/sync.gs` | An optional Google Sheets mirror, deployed separately as an Apps Script Web App. |
+| `setup/3-google-sheet-script.gs` | The Google Sheets mirror (readable rows, Summary, Waitlist), deployed as an Apps Script Web App. |
+| `setup/4-supabase-waitlist.sql` | The launch waitlist: `waitlist` table, `join_waitlist()`, and the public `waitlist_counts` view. |
+| `join.html` | The landing page: explains the idea and collects waitlist sign-ups (source `landing`). |
+| `INSTALL.html` | Copy-paste blocks for every setup file. |
+| `docs/how-it-works.html` | The full system guide: start here. |
 | `README.md` | This file. |
 
 ---
@@ -59,11 +63,11 @@ test the flow before connecting anything.
 1. Go to [supabase.com](https://supabase.com) → **New project** (the free
    tier is plenty for this).
 2. Once it's created: **SQL Editor** → **New query** → paste the entire
-   contents of `supabase/schema.sql` → **Run**. This creates all three
+   contents of `setup/1-supabase-tables.sql` → **Run**. This creates all three
    tables, locks them down with Row Level Security (the public app can only
    *insert* its own answers — it can never read anyone else's), and creates
    the two public, PII-free views that power the live stats.
-   Then do the same with `supabase/2_fix_saving_and_readable_views.sql`.
+   Then do the same with `setup/2-supabase-save-functions.sql`.
    **Both files are required**: the app saves through functions defined in
    the second one.
 3. **Project Settings → API**. Copy:
@@ -89,7 +93,7 @@ order by s.created_at desc;
 1. Create a new Google Sheet (any name).
 2. **Extensions → Apps Script**.
 3. Delete the placeholder `myFunction() {}` code, paste in the entire
-   contents of `google-apps-script/sync.gs`.
+   contents of `setup/3-google-sheet-script.gs`.
 4. **Deploy → New deployment** → gear icon → type **Web app**.
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -100,7 +104,7 @@ order by s.created_at desc;
 The Sheet builds an **All responses** tab (one row per person, one column
 per question, plain-English headings), a **Summary** tab, a **Contacts**
 tab, and two raw log tabs. Use the **Survey** menu inside the Sheet to
-rebuild or refresh them. When you update `sync.gs` later, redeploy with
+rebuild or refresh them. When you update `setup/3-google-sheet-script.gs` later, redeploy with
 *Manage deployments → Edit → New version*, not *New deployment* (that would
 change the URL). Treat this Sheet as a convenience
 copy for quick browsing — **Supabase is the source of truth** if the two

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sem Exchange · Your semester abroad, without the guesswork</title>
+<meta name="description" content="One place for IIT Roorkee students to see which partner universities they could get, what a semester abroad really costs, and which courses get approved. Join the waitlist.">
+<meta property="og:title" content="Sem Exchange: your semester abroad, without the guesswork">
+<meta property="og:description" content="Which partner university could you get? What does it really cost? Join the waitlist.">
+<meta name="theme-color" content="#F4F4F2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
+<!--
+  Sem Exchange waitlist page. One file, no framework, no libraries.
+  Sign-ups go to the same places as the survey:
+    - Supabase: join_waitlist(email, source = 'landing', channel)  (setup/4-supabase-waitlist.sql)
+    - Google Sheet: the "Waitlist" tab, via the same Apps Script web app
+  Give each channel its own link so you can see which one works:
+    join.html?from=hostel-rjb   join.html?from=insta   join.html?from=cr-pie-2nd
+-->
+<style>
+:root {
+  color-scheme: light;
+  --bg: #F4F4F2;
+  --surface: #FFFFFF;
+  --ink: #0E0E0E;
+  --ink-2: #5E5E5E;
+  --ink-3: #8F8F8F;
+  --line: #E3E3E0;
+  --red: #B23A2E;
+  --dark: #0E0E0E;
+  --ok: #2F7A4F;
+  --radius: 14px;
+  --sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 10; background: rgba(244,244,242,0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+.top.scrolled { border-bottom-color: var(--line); }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { font-weight: 600; font-size: 18px; letter-spacing: -0.03em; text-decoration: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 999px; font: 500 15px/1 var(--sans); padding: 12px 18px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn-dark { background: var(--ink); color: #fff; }
+.btn-dark:hover { background: #2A2A2A; }
+.btn-small { padding: 9px 14px; font-size: 14px; }
+.btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+.btn-ghost:hover { background: rgba(0,0,0,0.04); }
+
+/* labels, in the style of a small dotted tag */
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 14px/1 var(--sans); color: var(--ink-2); }
+.eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+
+/* hero */
+.hero { padding-top: 56px; padding-bottom: 40px; text-align: center; }
+.hero h1 { margin: 20px auto 0; max-width: 13ch; font-size: clamp(42px, 11vw, 88px); line-height: 1; letter-spacing: -0.05em; font-weight: 600; }
+.hero .lede { margin: 22px auto 0; max-width: 32ch; font-size: clamp(18px, 2.4vw, 21px); line-height: 1.45; color: var(--ink-2); }
+.hero-alt { margin-top: 14px; }
+
+/* the sign-up form */
+.join { margin: 30px auto 0; max-width: 460px; }
+.join-row { display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px; box-shadow: 0 6px 24px rgba(21,32,42,0.06); }
+.join-row:focus-within { border-color: var(--ink-3); }
+.join input { flex: 1; min-width: 0; border: 0; background: transparent; font: 400 16px var(--sans); color: var(--ink); padding: 0 14px; outline: none; }
+.join input::placeholder { color: var(--ink-3); }
+.join .note { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+.join .msg { margin-top: 10px; font-size: 14px; color: var(--red); min-height: 1px; }
+.joined { display: none; margin: 30px auto 0; max-width: 460px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; text-align: left; }
+.joined b { display: block; font-size: 18px; }
+.joined p { margin: 6px 0 14px; color: var(--ink-2); font-size: 15px; }
+.joined .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.is-joined .join, .is-joined .hero-alt { display: none; }
+.is-joined .joined { display: block; }
+.tick { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 13px; margin-right: 6px; vertical-align: -4px; }
+
+/* numbers */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 48px; }
+.stat { padding: 22px 12px; text-align: center; }
+.stat + .stat { border-left: 1px solid var(--line); }
+.stat .n { font-size: clamp(34px, 8vw, 56px); font-weight: 600; letter-spacing: -0.045em; line-height: 1; }
+.stat .l { margin-top: 8px; font-size: 13px; color: var(--ink-2); line-height: 1.3; }
+.stats-src { margin-top: 10px; text-align: center; font-size: 12px; color: var(--ink-3); }
+
+/* sections */
+section.block { padding-top: 72px; padding-bottom: 8px; }
+.block h2 { margin: 14px 0 0; font-size: clamp(31px, 6vw, 48px); line-height: 1.04; letter-spacing: -0.045em; font-weight: 600; max-width: 18ch; }
+.block .sub { margin: 14px 0 0; max-width: 52ch; color: var(--ink-2); }
+
+.problems { list-style: none; margin: 28px 0 0; padding: 0; display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.problems li { padding: 16px 18px; display: flex; gap: 14px; align-items: baseline; font-size: 16px; }
+.problems li + li { border-top: 1px solid var(--line); }
+.problems .x { font: 500 13px var(--mono); color: var(--ink-3); flex: none; }
+
+.features { margin-top: 28px; display: grid; grid-template-columns: 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.feature { padding: 20px 18px; }
+.feature + .feature { border-top: 1px solid var(--line); }
+.feature .num { font: 500 13px var(--mono); color: var(--ink-3); }
+.feature h3 { margin: 8px 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -0.03em; }
+.feature p { margin: 0; color: var(--ink-2); font-size: 16px; }
+
+/* product preview: one clean dashboard, then three phone screens */
+.window { margin-top: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: 0 40px 90px -30px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.04); }
+.win-bar { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+.win-bar > span { width: 10px; height: 10px; border-radius: 50%; background: #E6E6E2; }
+.win-url { margin: 0 auto; font: 500 12px var(--sans); color: var(--ink-3); }
+.win-tag { font: 500 10.5px var(--mono); font-style: normal; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
+.app { display: grid; grid-template-columns: 176px 1fr 236px; min-height: 360px; text-align: left; font-size: 14px; }
+.app-nav { border-right: 1px solid var(--line); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; }
+.app-brand { font-weight: 600; letter-spacing: -0.02em; padding: 0 10px 16px; }
+.app-nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink-3); }
+.app-nav a.on { background: var(--bg); color: var(--ink); font-weight: 500; }
+.app-nav svg, .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.app-main { padding: 22px 24px; min-width: 0; }
+.app-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; }
+.app-top h4 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.count-pill { font: 500 11px var(--mono); color: var(--ink-3); background: var(--bg); border-radius: 99px; padding: 3px 8px; }
+.fake-btn { display: inline-flex; align-items: center; gap: 6px; font: 500 13px var(--sans); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; color: var(--ink-2); }
+.row { display: grid; grid-template-columns: 1.5fr 1fr .7fr .8fr; gap: 14px; align-items: center; padding: 12px 4px; }
+.row + .row { border-top: 1px solid var(--line); }
+.row.head { font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 0 4px 10px; border-bottom: 1px solid var(--line); }
+.row.head + .row { border-top: 0; }
+.row.sel { background: var(--bg); border-radius: 10px; padding-left: 10px; padding-right: 10px; margin: 0 -6px; }
+.row.sel + .row { border-top-color: transparent; }
+.uni b { font-weight: 500; display: block; }
+.uni small { color: var(--ink-3); font-size: 12px; }
+.fit { display: flex; align-items: center; gap: 8px; font: 500 11.5px var(--mono); color: var(--ink-2); }
+.fit i { flex: 1; height: 4px; border-radius: 4px; background: var(--line); position: relative; overflow: hidden; }
+.fit i::after { content: ""; position: absolute; inset: 0; width: var(--w); background: var(--ink); border-radius: 4px; }
+.cost { font-variant-numeric: tabular-nums; }
+.st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.st i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+.st.open i { background: var(--ok); } .st.soon i { background: #C98A00; }
+.app-side { border-left: 1px solid var(--line); padding: 22px 20px; }
+.app-side h5 { margin: 0; font: 500 12px var(--sans); color: var(--ink-3); }
+.big { margin-top: 8px; font-size: 34px; font-weight: 600; letter-spacing: -0.04em; line-height: 1; }
+.big small { font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--ink-3); }
+.stack { display: flex; gap: 3px; height: 8px; margin-top: 20px; }
+.stack i { width: var(--w); background: var(--c); border-radius: 3px; }
+.legend { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 9px; font-size: 13px; color: var(--ink-2); }
+.legend li { display: flex; align-items: center; gap: 8px; }
+.legend li i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+.legend b { margin-left: auto; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.phones { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.phone { background: var(--surface); border: 1px solid var(--line); border-radius: 30px; padding: 10px; box-shadow: 0 30px 60px -30px rgba(0,0,0,0.16); }
+.phone-screen { border-radius: 22px; background: var(--bg); padding: 14px 16px 20px; min-height: 330px; text-align: left; font-size: 13.5px; }
+.notch { width: 64px; height: 6px; border-radius: 6px; background: #E0E0DC; margin: 0 auto 18px; }
+.phone h4 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+.phone .lbl { margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+.card-list { margin-top: 14px; background: var(--surface); border-radius: 14px; }
+.li { display: flex; align-items: center; gap: 10px; padding: 12px; line-height: 1.3; }
+.li + .li { border-top: 1px solid var(--line); }
+.li small { display: block; color: var(--ink-3); font-size: 12px; }
+.li > div { min-width: 0; flex: 1; }
+.badge { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; color: #fff; background: var(--ok); }
+.badge.part { background: #C98A00; }
+.avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; font: 600 11px var(--sans); }
+.avatar.b { background: #5E5E5E; } .avatar.c { background: #A3A3A0; }
+.go { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); color: var(--ink-2); }
+.go .ic { width: 13px; height: 13px; }
+.ring { position: relative; width: 150px; height: 150px; margin: 22px auto 0; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring div { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.ring b { font-size: 40px; font-weight: 600; letter-spacing: -0.05em; line-height: 1; }
+.ring small { font-size: 12px; color: var(--ink-3); }
+.ring-cap { margin-top: 16px; text-align: center; font-weight: 500; }
+.ring-cap small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
+.segs { display: flex; gap: 4px; margin-top: 16px; }
+.segs i { flex: 1; height: 4px; border-radius: 4px; background: var(--line); }
+.segs i.d { background: var(--ink); } .segs i.n { background: var(--red); }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .app-nav { display: none; }
+  .app-main { padding: 18px 16px; }
+  .app-side { border-left: 0; border-top: 1px solid var(--line); padding: 18px 16px; }
+  .row { grid-template-columns: 1fr auto auto; }
+  .row .c-fit { display: none; }
+  .win-url { display: none; }
+  .phones { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 12px; margin: 18px -20px 0; padding: 4px 20px 16px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .phones::-webkit-scrollbar { display: none; }
+  .phone { flex: 0 0 76%; scroll-snap-align: center; }
+}
+
+/* final call */
+.final { margin: 80px 0 0; background: var(--dark); color: #fff; border-radius: 24px; padding: 48px 22px; text-align: center; }
+.final h2 { margin: 0 auto; font-size: clamp(32px, 7vw, 52px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 600; max-width: 14ch; }
+.final p { margin: 14px auto 0; max-width: 40ch; color: rgba(255,255,255,0.7); }
+.final .join-row { border-color: transparent; }
+.final .join .note { color: rgba(255,255,255,0.55); }
+.final .join .msg { color: #FFB4A8; }
+.final .joined { color: var(--ink); }
+.final .btn-dark:hover { background: #2A2A2A; }
+.count { margin-top: 18px; font: 500 13px var(--mono); color: rgba(255,255,255,0.65); }
+
+.survey-link { margin-top: 26px; text-align: center; font-size: 15px; color: var(--ink-2); }
+.survey-link a { font-weight: 600; color: var(--ink); text-underline-offset: 3px; }
+
+footer { padding: 40px 0 48px; color: var(--ink-3); font-size: 13px; text-align: center; }
+
+@media (min-width: 760px) {
+  .hero { padding-top: 88px; padding-bottom: 48px; }
+  .features { grid-template-columns: repeat(3, 1fr); }
+  .feature + .feature { border-top: 0; border-left: 1px solid var(--line); }
+  .problems { grid-template-columns: repeat(3, 1fr); }
+  .problems li { flex-direction: column; gap: 8px; }
+  .problems li + li { border-top: 0; border-left: 1px solid var(--line); }
+  .preview { grid-template-columns: 1fr 1fr; }
+  .final { padding: 64px 40px; }
+}
+@media (max-width: 420px) {
+  .join-row { flex-direction: column; border-radius: 18px; padding: 8px; }
+  .join input { padding: 12px 10px; }
+  .join .btn { width: 100%; padding: 14px; }
+  .top .btn-small { padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header class="top" id="top">
+  <div class="wrap">
+    <a class="brand" href="#">Sem Exchange</a>
+    <a class="btn btn-dark btn-small" href="#join-final">Join waitlist</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <span class="eyebrow">For IIT Roorkee students</span>
+    <h1>Your semester abroad, without the guesswork.</h1>
+    <p class="lede">See which partner universities you could get, what it really costs, and which courses get approved.</p>
+
+    <div class="signup" data-signup>
+      <form class="join" novalidate>
+        <div class="join-row">
+          <input type="email" name="email" placeholder="Your email" autocomplete="email" inputmode="email" aria-label="Your email" required>
+          <button class="btn btn-dark" type="submit">Join the waitlist ↗</button>
+        </div>
+        <div class="msg" role="status" aria-live="polite"></div>
+        <div class="note">Free. One email when it launches. Nothing else.</div>
+      </form>
+      <div class="joined" role="status">
+        <b><span class="tick">✓</span>You’re on the list.</b>
+        <p>We’ll email you once, when it launches. Help us get it right in the meantime: the survey takes a few minutes.</p>
+        <div class="actions">
+          <a class="btn btn-dark btn-small" data-survey href="./">Take the survey</a>
+          <button class="btn btn-ghost btn-small" type="button" data-share>Share with a friend</button>
+        </div>
+      </div>
+    </div>
+    <div class="hero-alt"><a class="btn btn-ghost" data-survey href="./">Take the short survey</a></div>
+
+    <div class="stats" aria-label="Exchange at IITR in numbers">
+      <div class="stat"><div class="n">294</div><div class="l">partner MoUs</div></div>
+      <div class="stat"><div class="n">61</div><div class="l">countries</div></div>
+      <div class="stat"><div class="n">24</div><div class="l">credits that transfer</div></div>
+    </div>
+    <div class="stats-src">From IITR’s published MoU list and Senate credit-transfer policy.</div>
+  </section>
+
+  <section class="block wrap">
+    <span class="eyebrow">The problem</span>
+    <h2>The opportunity exists. Finding out if it’s yours is the hard part.</h2>
+    <ul class="problems">
+      <li><span class="x">01</span><span>Live calls are mixed in with ones that closed years ago.</span></li>
+      <li><span class="x">02</span><span>An MoU list shows a partnership exists, not that there’s a seat for you.</span></li>
+      <li><span class="x">03</span><span>Real costs and which courses get approved live only in seniors’ heads.</span></li>
+    </ul>
+  </section>
+
+  <section class="block wrap">
+    <span class="eyebrow">What you’ll get</span>
+    <h2>One place that answers the question for you.</h2>
+    <div class="features">
+      <div class="feature">
+        <div class="num">01</div>
+        <h3>Find your seat</h3>
+        <p>Universities actually open to your branch, year and CGPA.</p>
+      </div>
+      <div class="feature">
+        <div class="num">02</div>
+        <h3>See the real cost</h3>
+        <p>Rent, flights, visa and food, from students who went.</p>
+      </div>
+      <div class="feature">
+        <div class="num">03</div>
+        <h3>Get your courses approved</h3>
+        <p>Mappings approved before, and seniors to ask.</p>
+      </div>
+    </div>
+
+  </section>
+
+  <section class="block wrap" id="inside">
+    <span class="eyebrow">A look inside</span>
+    <h2>Every option, on one screen.</h2>
+
+    <div class="window" aria-label="Preview of the Sem Exchange dashboard, with example data">
+      <div class="win-bar"><span></span><span></span><span></span><div class="win-url">Sem Exchange · Explore</div><em class="win-tag">Example data</em></div>
+      <div class="app">
+        <aside class="app-nav" aria-hidden="true">
+          <div class="app-brand">Sem Exchange</div>
+          <a class="on"><svg class="ic" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>Explore</a>
+          <a><svg class="ic" viewBox="0 0 16 16"><path d="M4 2.5h8v11l-4-3-4 3z"/></svg>Shortlist</a>
+          <a><svg class="ic" viewBox="0 0 16 16"><path d="M2.5 13.5h11M4.5 11V7M8 11V4M11.5 11V8.5"/></svg>Costs</a>
+          <a><svg class="ic" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7"/></svg>Courses</a>
+          <a><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.8-2.6 2.7-4 5-4s4.2 1.4 5 4"/></svg>Seniors</a>
+        </aside>
+        <div class="app-main">
+          <div class="app-top"><h4>Find your seat <span class="count-pill">14</span></h4><span class="fake-btn"><svg class="ic" viewBox="0 0 16 16"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"/></svg>Filters</span></div>
+          <div class="rows">
+            <div class="row head"><span>University</span><span class="c-fit">Fit</span><span>Cost</span><span>Status</span></div>
+            <div class="row sel"><div class="uni"><b>University A</b><small>Germany</small></div><span class="fit c-fit" style="--w:92%"><i></i>92</span><span class="cost">₹3.8L</span><span class="st open"><i></i>Open</span></div>
+<div class="row"><div class="uni"><b>University B</b><small>Singapore</small></div><span class="fit c-fit" style="--w:86%"><i></i>86</span><span class="cost">₹4.6L</span><span class="st open"><i></i>Open</span></div>
+<div class="row"><div class="uni"><b>University C</b><small>France</small></div><span class="fit c-fit" style="--w:78%"><i></i>78</span><span class="cost">₹3.2L</span><span class="st soon"><i></i>Closing</span></div>
+<div class="row"><div class="uni"><b>University D</b><small>Japan</small></div><span class="fit c-fit" style="--w:71%"><i></i>71</span><span class="cost">₹5.4L</span><span class="st later"><i></i>March</span></div>
+
+          </div>
+        </div>
+        <aside class="app-side">
+          <h5>Real cost · University A</h5>
+          <div class="big">₹3.8L <small>/ semester</small></div>
+          <div class="stack"><i style="--w:42%;--c:#0E0E0E"></i><i style="--w:21%;--c:#5E5E5E"></i><i style="--w:18%;--c:#8F8F8F"></i><i style="--w:11%;--c:#BDBDBA"></i><i style="--w:8%;--c:#DADAD6"></i></div>
+          <ul class="legend"><li><i style="--c:#0E0E0E"></i>Rent<b>₹1.6L</b></li><li><i style="--c:#5E5E5E"></i>Food<b>₹0.8L</b></li><li><i style="--c:#8F8F8F"></i>Flights<b>₹0.7L</b></li><li><i style="--c:#BDBDBA"></i>Visa<b>₹0.4L</b></li><li><i style="--c:#DADAD6"></i>Other<b>₹0.3L</b></li></ul>
+        </aside>
+      </div>
+    </div>
+
+    <div class="phones" aria-label="Three phone screens, with example data">
+      <div class="phone"><div class="phone-screen">
+        <div class="notch"></div>
+        <h4>Courses</h4><div class="lbl">Approved before</div>
+        <div class="card-list">
+          <div class="li"><div>Operations Research<small>→ Optimisation Methods</small></div><span class="badge">✓</span></div>
+          <div class="li"><div>Production Planning<small>→ Supply Chain Design</small></div><span class="badge">✓</span></div>
+          <div class="li"><div>Metal Cutting<small>→ Manufacturing Lab</small></div><span class="badge part">½</span></div>
+        </div>
+      </div></div>
+      <div class="phone"><div class="phone-screen">
+        <div class="notch"></div>
+        <h4>Seniors</h4><div class="lbl">From your branch</div>
+        <div class="card-list">
+          <div class="li"><span class="avatar">RK</span><div>Rohan K.<small>University A</small></div><span class="go"><svg class="ic" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg></span></div>
+          <div class="li"><span class="avatar b">MS</span><div>Meera S.<small>University B</small></div><span class="go"><svg class="ic" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg></span></div>
+          <div class="li"><span class="avatar c">AV</span><div>Arjun V.<small>University C</small></div><span class="go"><svg class="ic" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg></span></div>
+        </div>
+      </div></div>
+      <div class="phone"><div class="phone-screen">
+        <div class="notch"></div>
+        <h4>Next deadline</h4><div class="lbl">University A</div>
+        <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#E3E3E0" stroke-width="7"/><circle cx="60" cy="60" r="52" fill="none" stroke="#0E0E0E" stroke-width="7" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="100"/></svg><div><b>12</b><small>days left</small></div></div>
+        <div class="ring-cap">Apply to IR<small>Step 2 of 5</small></div>
+        <div class="segs"><i class="d"></i><i class="n"></i><i></i><i></i><i></i></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="join-final">
+    <div class="final">
+      <span class="eyebrow" style="color:rgba(255,255,255,0.7)">Early access</span>
+      <h2 style="margin-top:14px">Be the first to know.</h2>
+      <p>Join the waitlist and we’ll email you once, the day it’s ready.</p>
+      <div class="signup" data-signup>
+        <form class="join" novalidate>
+          <div class="join-row">
+            <input type="email" name="email" placeholder="Your email" autocomplete="email" inputmode="email" aria-label="Your email" required>
+            <button class="btn btn-dark" type="submit">Join the waitlist ↗</button>
+          </div>
+          <div class="msg" role="status" aria-live="polite"></div>
+          <div class="note">Free. One email when it launches. Nothing else.</div>
+        </form>
+        <div class="joined" role="status">
+          <b><span class="tick">✓</span>You’re on the list.</b>
+          <p>We’ll email you once, when it launches. Help us get it right in the meantime: the survey takes a few minutes.</p>
+          <div class="actions">
+            <a class="btn btn-dark btn-small" data-survey href="./">Take the survey</a>
+            <button class="btn btn-ghost btn-small" type="button" data-share>Share with a friend</button>
+          </div>
+        </div>
+      </div>
+      <div class="count" id="count" hidden></div>
+    </div>
+    <p class="survey-link">Want to shape what we build? <a data-survey href="./">Take the short survey →</a></p>
+  </section>
+</main>
+
+<footer class="wrap">A student project at IIT Roorkee. Not an official IITR website.</footer>
+
+<script>
+(function () {
+  var CONFIG = {
+    supabaseUrl: 'https://flrlczafuuufdvhebaph.supabase.co',
+    supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscmxjemFmdXV1ZmR2aGViYXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MjE2NDgsImV4cCI6MjEwNzE5NzY0OH0.B6ep6BxeP-SPqQcMLZPqXpvkJ364zF7HwUJqsZxgaAM',
+    sheetsWebAppUrl: 'https://script.google.com/macros/s/AKfycbxHSOT_11xO7LFCdvCdsYyRhCRtjFC3xnxYpdS2NHs56cx26lLcy9TxZCDhNisYfm-K/exec',
+    showCountFrom: 25 // only show "N students waiting" once it's a number worth showing
+  };
+  var JOINED_KEY = 'semx_joined_v1';
+
+  // ?from=hostel-rjb -> "hostel-rjb". Same rule as the survey.
+  var channel = null;
+  try {
+    var f = new URLSearchParams(location.search).get('from');
+    channel = f ? (f.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 60) || null) : null;
+  } catch (e) {}
+
+  // Survey links keep the channel tag, so we can follow a channel end to end.
+  document.querySelectorAll('[data-survey]').forEach(function (a) {
+    a.href = './' + (channel ? '?from=' + encodeURIComponent(channel) : '');
+  });
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function markJoined() { document.body.classList.add('is-joined'); }
+  if (read(JOINED_KEY)) markJoined();
+
+  function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+  function saveToSupabase(email) {
+    return fetch(CONFIG.supabaseUrl + '/rest/v1/rpc/join_waitlist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: CONFIG.supabaseAnonKey,
+        Authorization: 'Bearer ' + CONFIG.supabaseAnonKey
+      },
+      body: JSON.stringify({ p_email: email, p_source: 'landing', p_channel: channel })
+    }).then(function (r) { if (!r.ok) throw new Error('db ' + r.status); });
+  }
+
+  function saveToSheet(email) {
+    return fetch(CONFIG.sheetsWebAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ kind: 'waitlist', email: email, source: 'landing', channel: channel, created_at: new Date().toISOString() })
+    }).then(function (r) { if (!r.ok) throw new Error('sheet ' + r.status); });
+  }
+
+  document.querySelectorAll('[data-signup] form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = form.querySelector('input');
+      var btn = form.querySelector('button');
+      var msg = form.querySelector('.msg');
+      var email = input.value.trim();
+      msg.textContent = '';
+      if (!validEmail(email)) { msg.textContent = 'Please enter a valid email.'; input.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Joining…';
+      // Both are tried; success if either one saved it.
+      Promise.allSettled([saveToSupabase(email), saveToSheet(email)]).then(function (res) {
+        var ok = res.some(function (r) { return r.status === 'fulfilled'; });
+        if (ok) {
+          store(JOINED_KEY, '1');
+          markJoined();
+          loadCount();
+        } else {
+          msg.textContent = 'That didn’t go through. Check your connection and try again.';
+          btn.disabled = false; btn.textContent = 'Join the waitlist ↗';
+        }
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-share]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var url = location.origin + location.pathname;
+      var text = 'Thinking about a semester abroad from IITR? This shows which partner universities you could actually get. Join the waitlist:';
+      if (navigator.share) { navigator.share({ title: 'Sem Exchange', text: text, url: url }).catch(function () {}); return; }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text + ' ' + url).then(function () { b.textContent = 'Link copied ✓'; });
+      }
+    });
+  });
+
+  function loadCount() {
+    fetch(CONFIG.supabaseUrl + '/rest/v1/waitlist_counts?select=n', { headers: { apikey: CONFIG.supabaseAnonKey } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        var total = (rows || []).reduce(function (s, r) { return s + (r.n || 0); }, 0);
+        var el = document.getElementById('count');
+        if (total >= CONFIG.showCountFrom) { el.textContent = total + ' IITR students are already waiting'; el.hidden = false; }
+      }).catch(function () {});
+  }
+  loadCount();
+
+  var top = document.getElementById('top');
+  window.addEventListener('scroll', function () { top.classList.toggle('scrolled', window.scrollY > 8); }, { passive: true });
+})();
+</script>
+</body>
+</html>

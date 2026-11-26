@@ -29,7 +29,7 @@ Every answer is saved to **two places** at the same moment:
 2. Click your project (its address starts with `flrlczafuuufdvhebaph`).
 3. In the left sidebar, click **SQL Editor** (the icon that looks like `>_`).
 4. Click **New query** (or the **+** button).
-5. Open the file [`supabase/2_fix_saving_and_readable_views.sql`](../supabase/2_fix_saving_and_readable_views.sql)
+5. Open the file [`setup/2-supabase-save-functions.sql`](../setup/2-supabase-save-functions.sql)
    from this repo, select everything, copy it.
 6. Paste it into the big empty box in Supabase.
 7. Click **Run** (bottom right, or press Ctrl+Enter).
@@ -45,7 +45,7 @@ functions and views.
 1. Open your responses Google Sheet.
 2. Top menu: **Extensions → Apps Script**. A code editor opens.
 3. Click inside the code, press **Ctrl+A** (select all), then **Delete**.
-4. Open [`google-apps-script/sync.gs`](../google-apps-script/sync.gs) from
+4. Open [`setup/3-google-sheet-script.gs`](../setup/3-google-sheet-script.gs) from
    this repo, copy all of it, and paste it into the empty editor.
 5. Click the **save icon** (💾) or press Ctrl+S.
 6. Top right: **Deploy → Manage deployments**.

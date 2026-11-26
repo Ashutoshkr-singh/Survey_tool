@@ -9,14 +9,16 @@
   purpose, nothing to build, no bundler, just open it or host it as-is.
 
   DESIGN
-    The visual language is a check-in desk: every question is presented on
-    a paper ticket card, floating on a dusk-navy background, and the final
-    screen is a real boarding pass built from the respondent's own answers
-    (their name, their category mapped to a flight status, a generated
-    sequence code, even a one-off barcode). Typefaces: Fraunces for
-    headlines, IBM Plex Sans for body and controls, IBM Plex Mono for the
-    ticket-style data fields (sequence numbers, status line). See the
-    <style> block for the full token system.
+    Same visual system as join.html: neutral light background, near-black
+    Geist type, one small red accent. Phone first: the question sits at the
+    top, answers are full-width rows at least 54px tall, and the main button
+    is pinned to the bottom of the screen, in thumb reach. Single-choice
+    answers advance on tap. Short questions, few subtitles.
+    Every question sits on a ticket (route strip IITR -> ABRD with a plane
+    that moves with progress, passenger, seat, perforation). On finishing,
+    the ticket flies off and a personal boarding pass flies in; it can be
+    shared as an image (html2canvas is loaded only on that tap).
+    Tokens live at the top of the style block.
 
   WHAT CHANGED FROM THE ORIGINAL FORM, AND WHY (for whoever maintains this):
     - Email moved from question #1 to the very end, paired with the result
@@ -60,12 +62,12 @@
            left off; this is also where everything lives if Supabase isn't
            configured yet, see CONFIG below)
         2. Supabase `answers` table (insert-only from the browser; see
-           supabase/schema.sql for the full schema and RLS policies)
+           setup/1-supabase-tables.sql for the full schema and RLS policies)
         3. a Google Apps Script Web App that mirrors the same row into a
-           Sheet (see google-apps-script/sync.gs), best-effort; Supabase is
+           Sheet (see setup/3-google-sheet-script.gs), best-effort; Supabase is
            the source of truth if the two ever disagree
     - Live peer stats are read from a PUBLIC, PII-free aggregate view
-      (`question_stats` / `survey_progress` in schema.sql); the browser
+      (`question_stats` / `survey_progress` in setup/1-supabase-tables.sql); the browser
       never reads back raw rows, only counts.
 
   SETUP
@@ -84,537 +86,274 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,480;9..144,560;9..144,650&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
 
 <!-- Supabase JS v2 (UMD build) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<!-- html2canvas, used only to rasterize the shareable boarding pass -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
-/* ==========================================================================
-   DESIGN TOKENS
-   A check-in desk, not a chat app: dusk-navy canvas, cream ticket cards,
-   a single airmail red for action and ink. Fraunces carries the voice in
-   headlines; IBM Plex Sans runs the body and controls; IBM Plex Mono is
-   reserved for ticket-style data (sequence codes, the status line) so it
-   reads as functional print, not decoration.
+/* ============================================================================
+   Exchange Reality Check: visual system (shared with join.html)
+   Neutral light background, near-black type, one tiny red accent.
+   Mobile first: question at the top, answers full width, the main button
+   pinned to the bottom of the screen where the thumb already is.
    ========================================================================== */
 :root {
-  --navy-900: #0A1C2B;
-  --navy-800: #123049;
-  --navy-700: #214A68;
-  --navy-600: #2E6186;
-
-  --paper: #F7F1E2;
-  --paper-dim: #EEE4C8;
-  --paper-edge: #DED0A8;
-
-  --ink: #1C2B33;
-  --ink-soft: rgba(28,43,51,0.62);
-  --ink-faint: rgba(28,43,51,0.4);
-
-  --cream: #F3ECDC;
-  --cream-soft: rgba(243,236,220,0.68);
-  --cream-faint: rgba(243,236,220,0.42);
-
-  --red: #B23A2E;
-  --red-dark: #8C2C22;
-  --red-soft: rgba(178,58,46,0.12);
-  --brass: #A9793C;
-  --success: #3F7D58;
-  --success-soft: rgba(63,125,88,0.14);
-
-  --radius-card: 0.85rem;
-  --radius-md: 0.6rem;
-  --radius-sm: 0.4rem;
-  --space-1: 0.5rem;
-  --space-2: 1rem;
-  --space-3: 1.5rem;
-  --space-4: 2.25rem;
-
-  --max-width: 27rem;
-  --touch-min: 2.9rem;
-
-  --font-display: 'Fraunces', Georgia, 'Iowan Old Style', serif;
-  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-
-  --fs-title: clamp(1.45rem, 1.15rem + 1.4vw, 1.85rem);
-  --fs-body: 1rem;
-  --fs-subtitle: 0.95rem;
-  --fs-small: 0.82rem;
-  --fs-micro: 0.72rem;
-
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg: #F4F4F2;
+  --surface: #FFFFFF;
+  --ink: #0E0E0E;
+  --ink-2: #5E5E5E;
+  --ink-3: #8F8F8F;
+  --line: #E3E3E0;
+  --line-strong: #CFCFCB;
+  --accent: #B23A2E;
+  --ok: #2F7A4F;
+  --radius: 14px;
+  --touch: 54px;
+  --sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2,.7,.2,1);
 }
-
 * { box-sizing: border-box; }
-html, body {
-  margin: 0; padding: 0; min-height: 100vh;
-  font-family: var(--font-body);
-  color: var(--cream);
-  background:
-    radial-gradient(ellipse 90% 60% at 18% -8%, var(--navy-700) 0%, transparent 60%),
-    radial-gradient(ellipse 70% 50% at 100% 100%, var(--navy-700) 0%, transparent 55%),
-    linear-gradient(180deg, var(--navy-800) 0%, var(--navy-900) 70%);
-  background-attachment: fixed;
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100vh; min-height: 100dvh;
+  background: var(--bg); color: var(--ink);
+  font: 400 17px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: clip; /* the flying ticket and pass must never cause sideways scroll */
 }
-h1, h2, h3, p, dl, dd, dt { margin: 0; }
-button, input, textarea { font-family: inherit; }
-:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* ==========================================================================
-   SHELL + DESKTOP SPLIT LAYOUT
-   Mobile: a single paper card centered on the navy canvas. From 880px up,
-   a fixed left panel (the "departure board") appears beside the card, so
-   the wide viewport isn't just a stretched phone screen.
-   ========================================================================== */
-.app-root { width: 100%; min-height: 100dvh; display: flex; justify-content: center; }
-.app-shell {
-  width: 100%; max-width: var(--max-width);
-  min-height: 100dvh;
-  display: flex; flex-direction: column;
-  padding: calc(var(--space-2) + env(safe-area-inset-top, 0)) var(--space-2) var(--space-4);
-  position: relative;
-}
+/* ---- shell ---- */
+.app-root { min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
+.app-shell { width: 100%; max-width: 560px; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 
-.side-panel { display: none; }
-
-@media (min-width: 880px) {
-  .app-root { gap: 0; align-items: stretch; }
-  .side-panel {
-    display: flex; flex-direction: column; justify-content: space-between;
-    width: 23rem; flex-shrink: 0;
-    padding: 3.5rem 3rem;
-    background:
-      radial-gradient(ellipse 80% 50% at 15% 0%, var(--navy-700) 0%, transparent 60%),
-      var(--navy-900);
-    border-right: 1px solid var(--navy-700);
-    position: sticky; top: 0; height: 100dvh;
-  }
-  .app-shell { padding-top: 3.5rem; padding-left: var(--space-3); padding-right: var(--space-3); }
-  /* The stage list on the left already names the section; don't say it twice. */
-  .header-status { visibility: hidden; }
-}
-
-.side-wordmark {
-  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass);
-}
-.side-headline {
-  font-family: var(--font-display); font-weight: 560; font-size: 1.9rem;
-  line-height: 1.22; color: var(--cream); margin-top: 1.1rem;
-}
-.route-graphic { margin-top: 2.5rem; position: relative; }
-.route-svg { width: 100%; height: 2.6rem; display: block; }
-.route-plane {
-  position: absolute; top: 50%; left: 4%;
-  transform: translate(-50%, -50%) rotate(90deg);
-  font-size: 0.95rem; color: var(--red);
-  transition: left 0.6s var(--ease);
-}
-.route-labels {
-  display: flex; justify-content: space-between;
-  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.06em;
-  color: var(--cream-soft); margin-top: 0.3rem;
-}
-/* Stage list: tells people what's coming without ever showing a question count. */
-.stage-list { margin: 2.5rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.95rem; }
-.stage-item { display: flex; align-items: center; gap: 0.8rem; font-size: var(--fs-subtitle); color: var(--cream-faint); transition: color 0.3s; }
-.stage-mark {
-  width: 1.15rem; height: 1.15rem; flex-shrink: 0; border-radius: 999px;
-  border: 1.5px solid var(--cream-faint);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.66rem; line-height: 1;
-}
-.stage-item.current { color: var(--cream); font-weight: 600; }
-.stage-item.current .stage-mark { border-color: var(--red); background: var(--red); box-shadow: 0 0 0 4px rgba(178,58,46,0.22); }
-.stage-item.done { color: var(--cream-soft); }
-.stage-item.done .stage-mark { border-color: var(--success); background: var(--success); color: var(--paper); }
-.stage-item.done .stage-mark::after { content: "\2713"; }
-.side-footnote { font-size: var(--fs-small); color: var(--cream-faint); line-height: 1.5; margin-top: 2rem; }
-
-/* The welcome screen is a plain landing card: no stage label or progress
-   rule above it, since there's no progress to report yet. */
-body.is-welcome .app-header { display: none; }
-@media (max-width: 879px) { body.is-welcome .step-stage { justify-content: flex-start; } }
-
-.welcome-eyebrow {
-  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--red);
-  margin-bottom: -0.5rem;
-}
-.welcome-points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
-.welcome-points li { display: flex; gap: 0.65rem; align-items: flex-start; font-size: var(--fs-subtitle); color: var(--ink); line-height: 1.45; }
-.welcome-points li::before {
-  content: ""; width: 0.4rem; height: 0.4rem; margin-top: 0.5rem; flex-shrink: 0;
-  border-radius: 999px; background: var(--red);
-}
-.welcome-meta {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 0.6rem;
-  font-size: var(--fs-small); color: var(--ink-soft);
-}
-.welcome-meta span + span::before { content: "\00B7"; margin-right: 0.6rem; color: var(--ink-faint); }
-.field-hint { font-weight: 400; color: var(--ink-faint); }
-
-/* ==========================================================================
-   HEADER / PROGRESS
-   One persistent status line (section name + a running count), not a label
-   repeated above every heading. The rule underneath is the only "progress
-   bar": thin, flat, no mascot riding along it.
-   ========================================================================== */
-.app-header { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: var(--space-2); }
-.header-row { display: flex; align-items: center; justify-content: space-between; min-height: 2.4rem; }
+.app-header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: env(safe-area-inset-top); }
+.header-row { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px; }
 .back-btn {
-  width: var(--touch-min); height: var(--touch-min);
-  display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; color: var(--cream-soft);
-  border-radius: 999px; cursor: pointer; font-size: 1.15rem;
-  transition: background 0.15s;
-  visibility: hidden;
+  width: 44px; height: 44px; border: 0; background: transparent; border-radius: 999px;
+  font-size: 22px; line-height: 1; cursor: pointer; visibility: hidden;
 }
 .back-btn.visible { visibility: visible; }
-.back-btn:hover, .back-btn:active { background: rgba(243,236,220,0.08); }
-.header-status {
-  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream-soft);
-}
-.progress-track { height: 2px; background: rgba(243,236,220,0.16); border-radius: 2px; overflow: hidden; }
-.progress-fill { height: 100%; background: var(--red); transition: width 0.45s var(--ease); }
+.back-btn:hover { background: rgba(0,0,0,0.05); }
+.header-status { font: 500 13px/1 var(--sans); color: var(--ink-2); }
+.header-count { width: 44px; text-align: right; padding-right: 12px; font: 500 13px/1 var(--mono); color: var(--ink-3); }
+.progress-track { height: 3px; margin: 0 20px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--ink); border-radius: 3px; transition: width .45s var(--ease); }
+body.is-welcome .app-header { display: none; }
 
-/* ==========================================================================
-   THE TICKET CARD
-   Every question is a paper card: a shallow die-cut notch at the top edge
-   (matching the navy canvas) is the one consistent detail tying every
-   screen to the boarding-pass finale.
-   ========================================================================== */
-.step-stage { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: var(--space-2) 0; }
-.step-card {
-  background: var(--paper);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  display: flex; flex-direction: column; gap: var(--space-2);
-  box-shadow: 0 18px 40px rgba(5,14,22,0.35);
-  position: relative;
-  animation: cardIn 0.32s var(--ease);
-}
-.step-card::before, .step-card::after {
-  content: ""; position: absolute; top: -0.5rem; width: 1rem; height: 1rem;
-  background: var(--navy-900); border-radius: 999px;
-}
-.step-card::before { left: 1.1rem; }
-.step-card::after { right: 1.1rem; }
-@media (prefers-reduced-motion: no-preference) {
-  @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-}
-@media (prefers-reduced-motion: reduce) { .step-card { animation: none; } }
+.dev-banner { margin: 12px 20px 0; padding: 10px 12px; border-radius: 10px; background: #FFF4D6; color: #6B5200; font-size: 14px; }
 
-.step-title { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 580; line-height: 1.22; color: var(--ink); letter-spacing: -0.005em; }
-.step-subtitle { font-size: var(--fs-subtitle); color: var(--ink-soft); line-height: 1.55; }
-.slider-hint { font-size: var(--fs-small); color: var(--ink-faint); }
+.step-stage { flex: 1; display: flex; flex-direction: column; padding: 14px 14px 0; }
 
-/* ==========================================================================
-   OPTION LIST (vertical, for longer or nuanced choices)
-   ========================================================================== */
-.options-list { display: flex; flex-direction: column; gap: 0.5rem; }
+/* ---- every question is a ticket: route strip, perforation, then the question ---- */
+.ticket {
+  flex: 1; display: flex; flex-direction: column; position: relative;
+  background: var(--surface); border-radius: 22px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.07);
+  animation: stepIn .28s var(--ease);
+}
+.ticket-head { padding: 14px 20px 13px; }
+.route { display: flex; align-items: center; gap: 12px; }
+.route-code { font: 600 14px/1 var(--mono); letter-spacing: 0.04em; }
+.route-line { flex: 1; position: relative; height: 18px; }
+.route-line::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1.5px dotted var(--line-strong); }
+.route-line::after { content: ""; position: absolute; left: 0; top: 50%; width: var(--p, 0%); border-top: 1.5px solid var(--ink); transition: width .5s var(--ease); }
+.route-plane { position: absolute; z-index: 1; top: 50%; transform: translate(-50%, -50%); font-size: 14px; line-height: 1; color: var(--ink); background: var(--surface); padding: 0 4px; transition: left .5s var(--ease); }
+.ticket-perf { position: relative; height: 0; margin: 0 20px; border-top: 1.5px dashed var(--line); }
+.ticket-perf::before, .ticket-perf::after { content: ""; position: absolute; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: var(--bg); }
+.ticket-perf::before { left: -31px; }
+.ticket-perf::after { right: -31px; }
+.step-card { flex: 1; display: flex; flex-direction: column; padding: 22px 20px 0; }
+@keyframes stepIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---- type ---- */
+.step-title {
+  margin: 0; font-size: clamp(25px, 6.8vw, 31px); line-height: 1.15; font-weight: 600;
+  letter-spacing: -0.03em; color: var(--ink); text-wrap: pretty;
+}
+.step-subtitle { margin-top: 10px; font-size: 16px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
+
+/* ---- welcome ---- */
+body.is-welcome .step-stage { padding-top: max(20px, 4vh); }
+.welcome-eyebrow { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin-bottom: 18px; font: 500 13px/1 var(--sans); color: var(--ink-2); }
+.welcome-eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+body.is-welcome .step-title { font-size: clamp(36px, 10.5vw, 52px); line-height: 1.02; letter-spacing: -0.045em; }
+body.is-welcome .step-subtitle { margin-top: 16px; font-size: 18px; }
+.more { margin-top: 18px; }
+.more summary { display: inline-flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; font: 500 14px/1 var(--sans); color: var(--ink-2); padding: 6px 0; }
+.more summary::-webkit-details-marker { display: none; }
+.more summary::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .2s; }
+.more[open] summary::after { transform: translateY(1px) rotate(-135deg); }
+.welcome-points { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.welcome-points li { position: relative; padding-left: 22px; font-size: 16px; line-height: 1.45; color: var(--ink); }
+.welcome-points li::before { content: ""; position: absolute; left: 2px; top: 0.55em; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-3); }
+.field-label { display: block; margin-top: 28px; font-size: 15px; font-weight: 500; color: var(--ink); }
+.field-hint { font-weight: 400; color: var(--ink-3); }
+.welcome-meta { display: flex; justify-content: center; gap: 6px 16px; flex-wrap: wrap; padding: 14px 0 calc(18px + env(safe-area-inset-bottom)); font-size: 13px; color: var(--ink-3); }
+
+/* ---- choices ---- */
+.options-list { display: flex; flex-direction: column; gap: 10px; margin-top: 26px; }
 .option-card {
-  display: flex; align-items: center; gap: 0.75rem;
-  min-height: var(--touch-min);
-  padding: 0.8rem 1rem;
-  background: #fff; border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-size: var(--fs-body); text-align: left; line-height: 1.4;
-  cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.1s;
-  -webkit-tap-highlight-color: transparent;
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: var(--touch);
+  padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  font: 500 16px/1.35 var(--sans); color: var(--ink); text-align: left; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
 }
+.option-card:hover { border-color: var(--line-strong); }
 .option-card:active { transform: scale(0.99); }
-.option-card.selected { background: var(--red-soft); border-color: var(--red); }
-.option-dot {
-  width: 1.05rem; height: 1.05rem; flex-shrink: 0;
-  border-radius: 999px; border: 1.5px solid var(--ink-faint);
-  display: flex; align-items: center; justify-content: center;
-}
-.option-card.selected .option-dot { border-color: var(--red); background: var(--red); }
-.option-dot::after { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 999px; background: var(--paper); transform: scale(0); transition: transform 0.15s; }
-.option-card.selected .option-dot::after { transform: scale(1); }
-.option-card.chip .option-dot { border-radius: 0.25rem; }
-.option-card.chip .option-dot::after { border-radius: 0.1rem; }
+.option-card.selected { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.option-dot { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--surface); transition: all .15s; }
+.option-card.chip .option-dot { border-radius: 6px; }
+.option-card.selected .option-dot { border-color: var(--ink); background: var(--ink); box-shadow: inset 0 0 0 4px var(--surface); }
+.option-card.chip.selected .option-dot { box-shadow: none; background: var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3L15 6.5' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
 
-/* Segmented pill row, for short discrete choices (year, gender, yes/no) */
-.options-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.options-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 .option-pill {
-  min-height: var(--touch-min); padding: 0.6rem 1.1rem;
-  background: #fff; border: 1px solid var(--paper-edge); border-radius: 999px;
-  color: var(--ink); font-size: var(--fs-body); font-weight: 500;
-  cursor: pointer; transition: all 0.15s var(--ease);
-  flex: 1 1 auto; text-align: center;
+  flex: 1 1 auto; min-width: 64px; min-height: var(--touch); padding: 0 18px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  font: 500 16px var(--sans); cursor: pointer; transition: all .15s;
 }
-.option-pill:active { transform: scale(0.97); }
-.option-pill.selected { background: var(--red); border-color: var(--red); color: var(--paper); }
+.option-pill.selected { background: var(--ink); border-color: var(--ink); color: #fff; }
 
-/* ==========================================================================
-   SCALE (1-5)
-   ========================================================================== */
-.scale-row { display: flex; justify-content: space-between; gap: 0.4rem; }
-.scale-dot {
-  flex: 1; aspect-ratio: 1; max-width: 3rem;
-  border-radius: 999px; border: 1.5px solid var(--paper-edge);
-  background: #fff; color: var(--ink);
-  font-family: var(--font-mono); font-weight: 600; font-size: var(--fs-body);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.15s var(--ease);
-}
-.scale-dot:active { transform: scale(0.92); }
-.scale-dot.selected { background: var(--red); border-color: var(--red); color: var(--paper); }
-.scale-labels { display: flex; justify-content: space-between; font-size: var(--fs-small); color: var(--ink-faint); padding: 0 0.1rem; }
+.scale-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 30px; }
+.scale-dot { height: 58px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); font: 600 19px var(--sans); cursor: pointer; transition: all .15s; }
+.scale-dot.selected { background: var(--ink); border-color: var(--ink); color: #fff; }
+.scale-labels { display: flex; justify-content: space-between; gap: 16px; margin-top: 10px; font-size: 14px; color: var(--ink-2); }
+.scale-labels span:last-child { text-align: right; }
 
-/* ==========================================================================
-   SLIDER + PAIRED NUMBER ENTRY
-   ========================================================================== */
-.slider-value { font-family: var(--font-display); font-size: 2.1rem; font-weight: 580; color: var(--red); }
-input[type="range"] {
-  -webkit-appearance: none; width: 100%; height: 0.4rem;
-  border-radius: 999px; background: var(--paper-edge);
-  outline: none; margin: 0.5rem 0;
+/* ---- text ---- */
+.text-input, .textarea-input, .exact-amount-input {
+  width: 100%; margin-top: 26px; padding: 15px 16px;
+  font: 400 17px/1.4 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  outline: none; transition: border-color .15s, box-shadow .15s;
 }
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 1.4rem; height: 1.4rem; border-radius: 999px;
-  background: var(--red); border: 3px solid var(--paper);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.3); cursor: pointer;
+.text-input:focus, .textarea-input:focus, .exact-amount-input:focus { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.text-input::placeholder, .textarea-input::placeholder { color: var(--ink-3); }
+.textarea-input { min-height: 132px; resize: vertical; }
+.voice-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.answer-hint { font-size: 14px; color: var(--ink-3); }
+.answer-hint.ok { color: var(--ok); }
+.voice-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font: 500 14px var(--sans); white-space: nowrap; cursor: pointer; }
+.voice-btn svg { width: 16px; height: 16px; flex: none; }
+.pitch-points { list-style: none; margin: 22px 0 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.pitch-points li { display: flex; gap: 14px; padding: 14px 16px; font-size: 16px; line-height: 1.4; }
+.pitch-points li + li { border-top: 1px solid var(--line); }
+.pitch-num { flex: none; font: 500 13px/1.6 var(--mono); color: var(--ink-3); }
+.voice-btn.listening { border-color: var(--accent); color: var(--accent); }
+.quick-fill-row { margin-top: 12px; }
+.quick-fill-btn, .no-idea-btn {
+  min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: transparent; font: 500 15px var(--sans); cursor: pointer;
 }
-input[type="range"]::-moz-range-thumb {
-  width: 1.4rem; height: 1.4rem; border-radius: 999px; border: 3px solid var(--paper);
-  background: var(--red); cursor: pointer;
-}
-.exact-amount-row { display: flex; align-items: center; gap: 0.5rem; }
-.exact-amount-row label { font-size: var(--fs-small); color: var(--ink-soft); flex-shrink: 0; }
-.exact-amount-input {
-  width: 100%; padding: 0.55rem 0.7rem;
-  background: #fff; border: 1px solid var(--paper-edge); border-radius: var(--radius-sm);
-  color: var(--ink); font-family: var(--font-mono); font-size: var(--fs-body);
-}
-.no-idea-btn {
-  align-self: flex-start; font-size: var(--fs-small); color: var(--ink-soft);
-  background: transparent; border: 1px dashed var(--ink-faint);
-  border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
-}
-.no-idea-btn.active { color: var(--red); border-color: var(--red); border-style: solid; }
+.no-idea-btn { margin-top: 18px; align-self: flex-start; }
+.no-idea-btn.active { background: var(--ink); border-color: var(--ink); color: #fff; }
 
-/* ==========================================================================
-   TEXT INPUTS
-   ========================================================================== */
-.text-input, .textarea-input {
-  width: 100%; padding: 0.85rem 1rem;
-  background: #fff; border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-md); color: var(--ink);
-  font-size: var(--fs-body); font-family: inherit; line-height: 1.5;
-  resize: vertical;
-}
-.text-input:focus, .textarea-input:focus { outline: none; border-color: var(--red); }
-.text-input::placeholder, .textarea-input::placeholder { color: var(--ink-faint); }
-.textarea-input { min-height: 4.75rem; }
-/* Speak-instead control for written answers: talking is far easier than
-   typing on a phone, and it's still the respondent's own words. */
-.voice-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: -0.4rem; }
-.voice-btn {
-  display: inline-flex; align-items: center; gap: 0.45rem;
-  font-size: var(--fs-small); font-weight: 500; color: var(--ink-soft);
-  background: transparent; border: 1px solid var(--paper-edge);
-  border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
-  min-height: 2.25rem; white-space: nowrap; flex-shrink: 0;
-}
-.voice-btn svg { width: 0.95rem; height: 0.95rem; }
-.voice-btn.listening { color: #fff; background: var(--red); border-color: var(--red); }
-@media (prefers-reduced-motion: no-preference) {
-  .voice-btn.listening svg { animation: micPulse 1.1s ease-in-out infinite; }
-  @keyframes micPulse { 50% { opacity: 0.45; } }
-}
-.answer-hint { font-size: var(--fs-small); color: var(--ink-faint); transition: color 0.2s; }
-.answer-hint.ok { color: var(--success); }
-.field-label { font-size: var(--fs-small); color: var(--ink-soft); font-weight: 500; }
-.quick-fill-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.quick-fill-btn {
-  font-size: var(--fs-small); color: var(--ink-soft);
-  background: transparent; border: 1px dashed var(--ink-faint);
-  border-radius: 999px; padding: 0.4rem 0.85rem; cursor: pointer;
-}
+/* ---- money slider ---- */
+.slider-value { margin-top: 26px; font-size: 44px; font-weight: 600; letter-spacing: -0.035em; line-height: 1; font-variant-numeric: tabular-nums; }
+.slider-value.empty { color: var(--ink-3); }
+.step-card input[type="range"] { width: 100%; margin: 22px 0 0; height: 32px; accent-color: var(--ink); cursor: pointer; }
+.slider-hint { margin-top: 6px; font-size: 14px; color: var(--ink-3); }
+.exact-amount-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.exact-amount-row label { font-size: 18px; font-weight: 600; }
+.exact-amount-input { margin-top: 0; font-variant-numeric: tabular-nums; }
 
-/* ==========================================================================
-   ACTION ROW
-   ========================================================================== */
-.action-row { display: flex; gap: 0.6rem; margin-top: 0.2rem; }
+/* ---- the main button: pinned to the bottom on phones ---- */
+.action-row {
+  position: sticky; bottom: 0; z-index: 4; display: flex; gap: 10px;
+  margin-top: auto; padding: 24px 0 calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, rgba(255,255,255,0), var(--surface) 40%);
+  border-radius: 0 0 22px 22px;
+}
 .btn {
-  flex: 1; min-height: var(--touch-min);
-  border-radius: var(--radius-md); border: none;
-  font-size: var(--fs-body); font-weight: 600; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 0.4rem;
-  transition: transform 0.12s, opacity 0.15s, background 0.15s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--touch); padding: 0 22px; border-radius: 999px; border: 1px solid transparent;
+  font: 500 17px var(--sans); cursor: pointer; transition: background .15s, opacity .15s;
 }
-.btn:active { transform: scale(0.97); }
-.btn-primary { background: var(--red); color: #fff; }
-.btn-primary:hover { background: var(--red-dark); }
-.btn-primary[disabled] { opacity: 0.35; pointer-events: none; }
-.btn-ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--paper-edge); flex: 0 0 auto; padding: 0 1.1rem; }
+.btn-primary { background: var(--ink); color: #fff; }
+.btn-primary:hover { background: #2A2A2A; }
+.btn-primary:disabled { opacity: 0.25; cursor: default; }
+.btn-ghost { background: transparent; border-color: var(--ink); color: var(--ink); }
 .btn-full { flex: 1; }
 
-/* ==========================================================================
-   STAT REVEAL + UNLOCK BAR
-   ========================================================================== */
-.stat-row { display: flex; flex-direction: column; gap: 0.5rem; }
-.stat-pill {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
-  padding: 0.75rem 1rem; background: var(--paper-dim);
-  border-radius: var(--radius-md); font-size: var(--fs-small); color: var(--ink-soft);
-}
-.stat-pill b { color: var(--red); font-family: var(--font-mono); font-size: var(--fs-body); font-weight: 600; }
-.unlock-bar-wrap { margin-top: 0.1rem; }
-.unlock-bar-track { height: 0.5rem; background: var(--paper-dim); border-radius: 999px; overflow: hidden; }
-.unlock-bar-fill { height: 100%; background: var(--success); border-radius: 999px; transition: width 0.6s var(--ease); }
-.unlock-bar-label { font-size: var(--fs-small); color: var(--ink-faint); margin-top: 0.35rem; }
+/* ---- comparisons ---- */
+.stat-row { display: grid; gap: 10px; margin-top: 26px; }
+.stat-pill { display: flex; flex-direction: column-reverse; gap: 4px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.stat-pill b { font-size: 34px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; }
+.stat-pill span { font-size: 15px; color: var(--ink-2); }
+.unlock-bar-wrap { margin-top: 18px; }
+.unlock-bar-track { height: 6px; background: var(--line); border-radius: 6px; overflow: hidden; }
+.unlock-bar-fill { height: 100%; background: var(--ink); border-radius: 6px; transition: width .6s var(--ease); }
+.unlock-bar-label { margin-top: 8px; font-size: 14px; color: var(--ink-2); }
 
-/* ==========================================================================
-   DEBRIEF: STAMP + BOARDING PASS
-   ========================================================================== */
-.stamp {
-  width: 4.6rem; height: 4.6rem; border-radius: 999px;
-  border: 2px solid var(--success); color: var(--success);
-  display: flex; align-items: center; justify-content: center; flex-direction: column;
-  transform: rotate(-7deg); align-self: flex-start;
-  font-family: var(--font-mono); letter-spacing: 0.04em;
-}
-.stamp-line1 { font-size: 0.6rem; font-weight: 600; }
-.stamp-line2 { font-size: 0.56rem; margin-top: 0.1rem; }
+/* ---- end screen ---- */
+.done-mark { width: 52px; height: 52px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 24px; margin-bottom: 22px; }
+.done-note { margin-top: 26px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.done-note b { display: block; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.done-note p { margin: 6px 0 0; font-size: 15px; color: var(--ink-2); }
+.done-tag { display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 14px; color: var(--ink-2); }
+.done-tag::before { content: "✓"; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 12px; }
 
-.ticket {
-  display: flex; flex-direction: column;
-  background: var(--paper-dim); border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-md); overflow: hidden;
-}
-.ticket-body { display: flex; flex-direction: column; min-width: 0; }
-.ticket-main { padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.9rem; }
-.ticket-topline {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--ink-faint);
-}
-.ticket-passenger-label { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
-.ticket-passenger-name { font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; color: var(--ink); line-height: 1.15; }
-
-.ticket-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem 0.6rem; }
-.ticket-field-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); }
-.ticket-field-value { font-family: var(--font-mono); font-size: var(--fs-small); font-weight: 600; color: var(--ink); margin-top: 0.15rem; }
-
-.ticket-divider {
-  height: 0; border-top: 2px dashed var(--paper-edge); position: relative; margin: 0 -1px;
-}
-.ticket-divider::before, .ticket-divider::after {
-  content: ""; position: absolute; width: 1.1rem; height: 1.1rem; border-radius: 999px;
-  background: var(--paper); top: -0.6rem;
-}
-.ticket-divider::before { left: -0.6rem; }
-.ticket-divider::after { right: -0.6rem; }
-
-.ticket-answers { padding: 0.9rem 1.2rem 1.1rem; display: flex; flex-direction: column; gap: 0.55rem; }
-.ticket-answers-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.15rem; }
-.ticket-answer-row { display: flex; justify-content: space-between; gap: 1rem; font-size: var(--fs-small); color: var(--ink-soft); }
-.ticket-answer-row b { color: var(--ink); font-weight: 600; }
-
-.ticket-stub { padding: 1rem 1.2rem 1.2rem; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
-.ticket-stub-seq { font-family: var(--font-mono); font-size: var(--fs-small); font-weight: 600; color: var(--ink); letter-spacing: 0.04em; }
-.ticket-stub-seq span { display: block; font-size: 0.62rem; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; margin-bottom: 0.15rem; }
-.barcode { height: 2.3rem; width: 7.5rem; flex-shrink: 0; }
-
-/* The ticket card keeps a fixed, portrait, phone-ticket width at every screen
-   size (it matches --max-width, not the viewport), so it never has room for a
-   side-by-side main+stub split without feeling cramped. It stays one stacked
-   column: main details, a dashed tear line, your answers, another tear line,
-   then the stub row (sequence plus barcode), the same shape a real paper
-   boarding pass folds into. */
-
-/* ==========================================================================
-   TOAST + MODAL  (replaces window.alert / confirm entirely)
-   ========================================================================== */
-#toast-root {
-  position: fixed; left: 50%; bottom: calc(1.2rem + env(safe-area-inset-bottom, 0));
-  transform: translateX(-50%); z-index: 1000;
-  display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
-  pointer-events: none; width: 100%; max-width: var(--max-width); padding: 0 1rem;
-}
-.toast {
-  pointer-events: auto;
-  background: var(--navy-900); border: 1px solid var(--navy-700); border-radius: var(--radius-md);
-  padding: 0.7rem 1.1rem; font-size: var(--fs-small); color: var(--cream);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-  animation: toastIn 0.25s var(--ease);
-  max-width: 100%;
-}
-@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-#modal-root {
-  position: fixed; inset: 0; z-index: 1100;
-  display: none; align-items: flex-end; justify-content: center;
-  background: rgba(10,20,30,0.6);
-}
+/* ---- toast & sheet ---- */
+#toast-root { position: fixed; left: 0; right: 0; bottom: calc(104px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; pointer-events: none; z-index: 50; padding: 0 20px; }
+.toast { max-width: 480px; padding: 12px 16px; border-radius: 12px; background: var(--ink); color: #fff; font-size: 15px; line-height: 1.35; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,0.22); transition: opacity .25s; animation: stepIn .2s var(--ease); }
+#modal-root { position: fixed; inset: 0; z-index: 60; display: none; align-items: flex-end; justify-content: center; background: rgba(0,0,0,0.35); }
 #modal-root.open { display: flex; }
-.modal-sheet {
-  width: 100%; max-width: var(--max-width);
-  background: var(--paper); border: 1px solid var(--paper-edge);
-  border-radius: 1.1rem 1.1rem 0 0;
-  padding: var(--space-3) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0));
-  display: flex; flex-direction: column; gap: 0.9rem;
-  animation: sheetIn 0.28s var(--ease);
-}
-@keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
-.modal-title { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; color: var(--ink); }
-.modal-body { font-size: var(--fs-subtitle); color: var(--ink-soft); line-height: 1.5; }
-.modal-actions { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+.modal-sheet { width: 100%; max-width: 560px; background: var(--surface); border-radius: 20px 20px 0 0; padding: 22px 20px calc(20px + env(safe-area-inset-bottom)); }
+.modal-title { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.modal-body { margin-top: 8px; color: var(--ink-2); }
+.modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.modal-actions .btn { flex: 1; }
 
-/* notice banner shown when CONFIG isn't filled in yet */
-.dev-banner {
-  font-family: var(--font-mono); font-size: var(--fs-micro); text-align: center; color: var(--brass);
-  background: rgba(169,121,60,0.12); border: 1px dashed rgba(169,121,60,0.4);
-  border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; margin-bottom: 0.6rem;
+@media (min-width: 700px) {
+  .step-stage { padding: 40px 0 40px; }
+  .ticket { flex: none; min-height: 560px; }
+  .action-row { position: static; background: none; padding-bottom: 24px; }
+  #toast-root { bottom: 32px; }
 }
+/* ---- the ending: ticket flies off, boarding pass flies in ---- */
+.ticket.fly-away { animation: ticketAway .62s cubic-bezier(.5,0,.75,0) forwards; pointer-events: none; }
+@keyframes ticketAway { to { transform: translate(55vw, -85vh) rotate(-18deg) scale(.55); opacity: 0; } }
+.fly-plane { position: fixed; left: 0; top: 0; z-index: 70; font-size: 42px; pointer-events: none; animation: planeAcross 1.1s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes planeAcross { from { transform: translate(-15vw, 70vh) rotate(-28deg); } to { transform: translate(110vw, -15vh) rotate(-28deg); } }
 
-.reflection-bubble {
-  font-size: var(--fs-small); color: var(--ink-soft); font-style: italic;
-  padding: 0.6rem 0.9rem; border-left: 2px solid var(--red);
-  background: var(--paper-dim); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
+.pass { position: relative; background: var(--surface); border-radius: 22px; box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 18px 50px rgba(0,0,0,0.12); overflow: visible; }
+.pass.fly-in { animation: passIn .95s cubic-bezier(.2,.85,.25,1.08) both; }
+@keyframes passIn { 0% { transform: translate(-45vw, 75vh) rotate(16deg) scale(.6); opacity: 0; } 35% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+.pass-top { display: flex; justify-content: space-between; align-items: center; padding: 13px 20px; border-radius: 22px 22px 0 0; background: var(--ink); color: #fff; font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.pass-class { color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 99px; padding: 4px 8px; }
+.pass-body { padding: 22px 20px 18px; }
+.pass .route-code { font-size: 24px; }
+.pass-name { margin-top: 20px; font-size: 24px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; overflow-wrap: anywhere; }
+.pass-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+.pass-grid div { font: 500 10.5px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); min-width: 0; }
+.pass-grid b { display: block; margin-top: 4px; font: 600 15px/1.2 var(--sans); letter-spacing: -0.01em; text-transform: none; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pass-status { color: var(--accent) !important; }
+.pass-foot { padding: 16px 20px 20px; }
+.barcode { display: flex; align-items: stretch; justify-content: space-between; height: 34px; gap: 1.5px; overflow: hidden; }
+.barcode i { display: block; background: var(--ink); border-radius: 0.5px; }
+.end-stage { padding-bottom: 8px; }
+.end-copy { margin-top: 26px; padding: 0 4px; }
+.end-copy .step-title { font-size: clamp(24px, 6.5vw, 30px); }
+.end-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+
+@media (prefers-reduced-motion: reduce) { .ticket, .toast, .pass.fly-in { animation: none !important; } .fly-plane { display: none; } * { transition: none !important; } }
 </style>
 </head>
 <body>
 
 <div class="app-root">
-  <aside class="side-panel" id="sidePanel">
-    <div>
-      <div class="side-wordmark">IIT Roorkee &middot; Student survey</div>
-      <h1 class="side-headline" id="sideHeadline">A semester abroad, honestly.</h1>
-      <div class="route-graphic" aria-hidden="true">
-        <svg class="route-svg" viewBox="0 0 320 24" preserveAspectRatio="none">
-          <line x1="14" y1="12" x2="306" y2="12" stroke="rgba(243,236,220,0.3)" stroke-width="1.5" stroke-dasharray="3 6"/>
-          <circle cx="14" cy="12" r="5" fill="#B23A2E"/>
-          <circle cx="306" cy="12" r="5" fill="none" stroke="rgba(243,236,220,0.5)" stroke-width="1.5"/>
-        </svg>
-        <div class="route-plane" id="routePlane">&#9992;</div>
-        <div class="route-labels"><span>IITR</span><span id="routeDestLabel">Abroad</span></div>
-      </div>
-      <ol class="stage-list" id="stageList" aria-label="Survey sections"></ol>
-    </div>
-    <p class="side-footnote" id="sideFootnote">Your answers save as you go. Close the tab anytime and you'll pick up right where you left off.</p>
-  </aside>
-
   <div class="app-shell">
     <div class="app-header">
       <div class="header-row">
         <button class="back-btn" id="backBtn" aria-label="Back">&#8592;</button>
         <span class="header-status" id="headerStatus"></span>
-        <span style="width:var(--touch-min)"></span>
+        <span class="header-count" id="headerCount" aria-hidden="true"></span>
       </div>
       <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
     </div>
@@ -639,7 +378,7 @@ const CONFIG = {
   supabaseUrl: 'https://flrlczafuuufdvhebaph.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscmxjemFmdXV1ZmR2aGViYXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MjE2NDgsImV4cCI6MjEwNzE5NzY0OH0.B6ep6BxeP-SPqQcMLZPqXpvkJ364zF7HwUJqsZxgaAM',
 
-  // google-apps-script/sync.gs, deployed as a Web App (see that file's header)
+  // setup/3-google-sheet-script.gs, deployed as a Web App (see that file's header)
   sheetsWebAppUrl: 'https://script.google.com/macros/s/AKfycbxHSOT_11xO7LFCdvCdsYyRhCRtjFC3xnxYpdS2NHs56cx26lLcy9TxZCDhNisYfm-K/exec',
 
   // Optional: a small proxy you deploy yourself (Cloudflare Worker, Apps
@@ -658,6 +397,11 @@ const CONFIG = {
   retryMaxDelayMs: 20000,
 };
 
+// ?test = a sandbox for reviewing: nothing is sent and it keeps its own
+// progress, so trying the survey never adds a fake response.
+const TEST_MODE = /[?&]test\b/.test(location.search);
+if (TEST_MODE) { CONFIG.supabaseUrl = ''; CONFIG.sheetsWebAppUrl = ''; }
+
 const isConfigured = {
   supabase: CONFIG.supabaseUrl.startsWith('http') && CONFIG.supabaseAnonKey.length > 20,
   sheets: CONFIG.sheetsWebAppUrl.startsWith('http'),
@@ -667,13 +411,17 @@ const isConfigured = {
    2. UTILITIES: toasts, modals (no alert()/confirm() anywhere in this file),
       backoff helper, small DOM helpers.
    ========================================================================== */
+// One message at a time: a repeat tap refreshes the same toast instead of
+// stacking copies side by side over the button.
+let toastTimer = null;
 function showToast(message, ms = 2800) {
   const root = document.getElementById('toast-root');
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = message;
-  root.appendChild(el);
-  setTimeout(() => { el.style.transition = 'opacity .25s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 250); }, ms);
+  let node = root.querySelector('.toast');
+  if (!node) { node = document.createElement('div'); node.className = 'toast'; root.appendChild(node); }
+  node.textContent = message;
+  node.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { node.style.opacity = '0'; setTimeout(() => node.remove(), 250); }, ms);
 }
 
 function showModal({ title, body, actions }) {
@@ -725,8 +473,8 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xx
       that survives a refresh, flushed with backoff to Supabase and/or
       Sheets.
    ========================================================================== */
-const LS_KEY = 'erc_session_v2';
-const LS_QUEUE_KEY = 'erc_write_queue_v2';
+const LS_KEY = TEST_MODE ? 'erc_session_test' : 'erc_session_v2';
+const LS_QUEUE_KEY = TEST_MODE ? 'erc_write_queue_test' : 'erc_write_queue_v2';
 
 function loadLocal() {
   try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; }
@@ -758,19 +506,28 @@ let flushing = false;
 async function flushQueue() {
   if (flushing) return;
   flushing = true;
+  const attempted = new Set();
+  const sent = new Set();
   try {
-    let q = loadQueue();
-    const remaining = [];
+    const q = loadQueue();
     for (const item of q) {
+      attempted.add(item._id);
       try {
         await withBackoff(() => sendOne(item), { maxAttempts: 2 }); // quick attempts here; full backoff happens via periodic retry below
+        sent.add(item._id);
       } catch {
-        remaining.push(item); // still failing, keep for later
+        // still failing: it stays in the queue for the next trigger
       }
     }
-    saveQueue(remaining);
   } finally {
+    // Re-read the queue rather than overwriting it: answers given while this
+    // flush was sending were added to storage meanwhile and must not be lost.
+    const latest = loadQueue();
+    saveQueue(latest.filter(item => !sent.has(item._id)));
     flushing = false;
+    // Send anything that arrived mid-flush right away (failed items wait for
+    // the periodic retry instead, so this can't loop).
+    if (latest.some(item => !attempted.has(item._id))) flushQueue();
   }
 }
 
@@ -789,7 +546,7 @@ async function sendOne(item) {
 }
 
 // Writes go through three small database functions (see
-// supabase/2_fix_saving_and_readable_views.sql) rather than straight into
+// setup/2-supabase-save-functions.sql) rather than straight into
 // the tables. A plain upsert needs read access to the table to detect the
 // existing row, and the public key deliberately has none, so every direct
 // upsert was being rejected. The functions do the upsert server-side while
@@ -812,6 +569,11 @@ async function sendToSupabase(item) {
       p_session_id: item.session_id, p_email: item.email ?? null, p_phone_whatsapp: item.phone_whatsapp ?? null,
       p_ok_followup_contact: !!item.ok_followup_contact, p_ok_junior_contact: !!item.ok_junior_contact,
       p_ok_interview_contact: !!item.ok_interview_contact,
+    });
+  } else if (item.kind === 'waitlist') {
+    call = supabaseClient.rpc('join_waitlist', {
+      p_email: item.email, p_source: item.source, p_channel: item.channel ?? null,
+      p_session_id: item.session_id ?? null,
     });
   } else {
     return;
@@ -855,15 +617,15 @@ const DEPARTMENT_SUGGESTIONS = [
 const TIER0 = [
   {
     id: 'welcome', tier: 0, type: 'checkin',
-    eyebrow: 'For every IIT Roorkee student',
+    eyebrow: 'IIT Roorkee · Student survey',
     title: 'Could you spend a semester studying abroad?',
-    subtitle: 'IITR students can spend a semester at a partner university abroad, yet very few do. We’re students finding out why, so we can make it easier.',
+    subtitle: 'Few IITR students go abroad. Help us find out why.',
     points: [
-      'Never heard of it? Then your answers matter most.',
-      'You’ll get real costs and what others said.',
+      'Never heard of it? Your answers matter most.',
+      'We’ll send you real costs and what others said.',
     ],
-    meta: ['About 4 minutes', 'Mostly tapping, no wrong answers'],
-    nameLabel: 'What should we call you?', namePlaceholder: 'First name', primaryLabel: 'Start',
+    meta: ['A very short survey · saves as you go'],
+    nameLabel: 'Your first name', namePlaceholder: 'First name', primaryLabel: 'Start',
   },
   {
     id: 'q8_awareness', tier: 0, type: 'single',
@@ -872,33 +634,33 @@ const TIER0 = [
   },
   {
     id: 'q10_cost_guess', tier: 0, type: 'slider',
-    title: 'Take a guess: what does one semester abroad cost, all in?',
-    subtitle: 'Tuition, flights, visa, rent, food. Everything. A rough guess is fine.',
+    title: 'Guess: what does one semester abroad cost in total?',
+    subtitle: 'Fees, flights, visa, rent, food. A rough guess is fine.',
     min: 0, max: 2000000, step: 25000, unit: '₹', noIdeaLabel: 'I have no idea',
   },
   {
     id: 'q12_confidence', tier: 0, type: 'scale',
-    title: 'How confident are you in that number?',
-    scaleLabels: ['pure guess', 'I know this fairly precisely'],
+    title: 'How sure are you?',
+    scaleLabels: ['Pure guess', 'Very sure'],
   },
   {
     id: 'q11_cost_reasoning', tier: 0, type: 'long_text', optional: true,
-    title: 'How did you land on that figure?',
-    placeholder: 'Even one line about your logic helps, or skip this.',
+    title: 'How did you get that number?',
+    placeholder: 'One line is plenty.',
   },
   {
     id: 'q2_programme', tier: 0, type: 'single',
-    title: 'Which programme are you in?',
+    title: 'Your programme',
     options: [...PROGRAMMES_UG, ...PROGRAMMES_PG],
   },
   {
     id: 'q3_year', tier: 0, type: 'single', layout: 'row',
-    title: 'Which year of that programme are you in?',
+    title: 'Your year',
     options: ['1st', '2nd', '3rd', '4th', '5th', '6th'],
   },
   {
     id: 'q4_department', tier: 0, type: 'short_text', suggestions: DEPARTMENT_SUGGESTIONS,
-    title: 'Which department or branch?', placeholder: 'Start typing to see suggestions',
+    title: 'Your department', placeholder: 'Start typing',
   },
   {
     id: 'q5_gender', tier: 0, type: 'single', layout: 'row', optional: true,
@@ -906,8 +668,7 @@ const TIER0 = [
   },
   {
     id: 'q7_family_situation', tier: 0, type: 'single', optional: true,
-    title: 'If a large one-time education expense came up, how would your family manage it?',
-    subtitle: 'This helps us see the real barriers, not just interest.',
+    title: 'If your family faced a big one-time education cost, how would they manage?',
     options: [
       'We could manage it without much difficulty', 'It would be a stretch, but possible',
       'It would only be possible with a loan or scholarship', 'It would not be possible', 'Prefer not to say',
@@ -915,7 +676,7 @@ const TIER0 = [
   },
   {
     id: 'reveal_tier0', tier: 0, type: 'reveal',
-    title: 'Here’s how that compares.', primaryLabel: 'Keep going',
+    title: 'Here’s how others answered.', primaryLabel: 'Keep going',
     statsFor: ['q10_cost_guess', 'q8_awareness'],
   },
 ];
@@ -924,52 +685,61 @@ const TIER1 = [
   {
     id: 'q2pg_availability', tier: 1, type: 'single',
     condition: (a) => a.is_pg,
-    title: 'As a postgraduate student, do you believe a semester or research stay abroad is available to you, or is it a UG-only thing?',
+    title: 'Can PG students go abroad for a semester or research stay?',
     options: ['Available to PG students too', 'I think it’s UG-only', 'No idea', 'I know PG has a different route'],
   },
   {
     id: 'q2pg_detail', tier: 1, type: 'short_text',
     condition: (a) => a.is_pg && a.q2pg_availability === 'I know PG has a different route',
-    title: 'What do you know about that different route?', placeholder: 'Whatever you know, roughly.',
+    title: 'What do you know about that route?', placeholder: 'Roughly is fine',
   },
   {
     id: 'q9_name_university', tier: 1, type: 'short_text',
-    title: 'Name one university abroad you think IITR students can go to on exchange.',
-    quickFill: 'No idea', placeholder: 'University name, or tap "No idea"',
+    title: 'Name one university IITR students can go to on exchange.',
+    quickFill: 'No idea', placeholder: 'University name',
   },
   {
     id: 'q13_who_handles', tier: 1, type: 'short_text',
-    title: 'Who at IITR handles this? Which office, or which person?',
-    quickFill: 'Don’t know', placeholder: 'Office or name, or tap "Don’t know"',
+    title: 'Who handles exchange at IITR?',
+    quickFill: 'Don’t know', placeholder: 'Office or person',
+  },
+  {
+    id: 'q17_where_look', tier: 1, type: 'multi_chips',
+    title: 'Where do you look, or would you look, for exchange info?',
+    options: [
+      'Channel i', 'Institute email', 'IR office or its website', 'Seniors or friends', 'WhatsApp groups',
+      'Google or partner university websites', 'I’ve never looked', 'Other',
+    ],
+    allowOtherText: true,
   },
   {
     id: 'q14_cgpa_requirement', tier: 1, type: 'single',
-    title: 'Is there a minimum CGPA requirement to apply?',
+    title: 'Is there a minimum CGPA to apply?',
     options: ['Yes, and I know roughly what it is', 'Yes, there’s definitely a cutoff, but I don’t know what', 'I don’t think there is one', 'No idea'],
   },
   {
     id: 'q14_detail', tier: 1, type: 'short_text', inputMode: 'decimal',
     condition: (a) => a.q14_cgpa_requirement === 'Yes, and I know roughly what it is',
-    title: 'What’s the cutoff, roughly?', placeholder: 'e.g. 7.0 CGPA',
+    title: 'Roughly what CGPA?', placeholder: 'e.g. 7.0',
   },
   {
     id: 'q15_application_window', tier: 1, type: 'multi_chips',
-    title: 'Roughly what time of year do applications open?',
+    title: 'When do applications usually open?',
     options: ['Jan–Mar', 'Apr–Jun', 'Jul–Sep', 'Oct–Dec', 'No idea'],
   },
   {
     id: 'q16_credits_count', tier: 1, type: 'single',
-    title: 'Do the credits you earn abroad count toward your IITR degree?',
+    title: 'Do credits from abroad count toward your IITR degree?',
     options: ['Yes, all of them', 'Yes, some of them', 'No', 'No idea'],
   },
   {
     id: 'reveal_tier1', tier: 1, type: 'reveal',
-    title: 'Nice, the guessing part is done.', primaryLabel: 'Continue', showUnlockBar: true,
+    title: 'That’s the guessing done.', primaryLabel: 'Continue', showUnlockBar: true,
     statsFor: ['q14_cgpa_requirement', 'q16_credits_count'],
   },
   {
     id: 'q18_category', tier: 1, type: 'single',
-    title: 'Which of these is closest to your own situation?',
+    title: 'Which is closest to you?',
     options: [
       'I’ve never seriously considered applying',
       'I thought about it but never started an application',
@@ -983,14 +753,13 @@ const TIER1 = [
 
 const BRANCH_A = [ // never applied (Q18 options 1-2)
   { id: 'q19_unlikely_reason', tier: 2, type: 'long_text',
-    title: 'When you think about a semester abroad, what’s the first thing that makes it feel unlikely for you?' },
-  { id: 'q20_describe_exchange_student', tier: 2, type: 'long_text',
+    title: 'What makes a semester abroad feel unlikely for you?' },
+  { id: 'q20_describe_exchange_student', tier: 2, type: 'long_text', optional: true,
     title: 'Picture an IITR student who goes on exchange. What are they like?' },
   { id: 'q21_sounds_like_you', tier: 2, type: 'scale',
-    title: 'Does that description sound like you?', scaleLabels: ['not at all like me', 'that’s basically me'] },
+    title: 'Is that you?', scaleLabels: ['Not at all', 'That’s me'] },
   { id: 'q22_barriers', tier: 2, type: 'multi_chips',
-    title: 'Which of these have held you back, if any?',
-    subtitle: 'Pick as many as you like.',
+    title: 'What has held you back?',
     options: [
       'The cost', 'I don’t think my CGPA is good enough', 'I don’t know how to start or where to even look',
       'It would delay my graduation', 'It would clash with placements or internships', 'Family wouldn’t be comfortable with it',
@@ -999,27 +768,26 @@ const BRANCH_A = [ // never applied (Q18 options 1-2)
       'Nothing has stopped me, I still might apply', 'Other',
     ], allowOtherText: true },
   { id: 'q23_biggest_barrier', tier: 2, type: 'single_from_prior', sourceQuestion: 'q22_barriers',
-    title: 'Of everything you ticked, which single one is the biggest?' },
+    title: 'Which one matters most?' },
   { id: 'q24_if_removed', tier: 2, type: 'single',
-    title: 'Imagine that one thing is completely gone. Would you apply?',
+    title: 'If that was gone, would you apply?',
     options: ['Yes, I’d apply', 'Probably, but something else would still be in the way', 'No, I still wouldn’t'] },
   { id: 'q24_detail_probably', tier: 2, type: 'short_text',
     condition: (a) => a.q24_if_removed === 'Probably, but something else would still be in the way',
-    title: 'What would that something else be?' },
+    title: 'What else would stop you?' },
   { id: 'q24_detail_no', tier: 2, type: 'short_text',
     condition: (a) => a.q24_if_removed === 'No, I still wouldn’t',
     title: 'Why not?' },
   { id: 'q25_suggested_by_someone', tier: 2, type: 'single',
-    title: 'Has a senior, friend or professor ever personally suggested you should apply?',
+    title: 'Has anyone ever told you, personally, to apply?',
     options: ['Yes', 'No', 'I’ve heard people discuss it, but never directed at me'] },
 ];
 
 const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
   { id: 'b_intro', tier: 2, type: 'info',
-    title: 'You got further than most. We want the real story of where it broke down.', primaryLabel: 'Continue' },
+    title: 'You got further than most. Where did it stop?', primaryLabel: 'Continue' },
   { id: 'q26_how_far', tier: 2, type: 'multi_chips',
-    title: 'How far did you get?',
-    subtitle: 'Pick everything you actually did.',
+    title: 'What did you actually do?',
     options: [
       'Read an email or notice about it', 'Searched online or looked at partner university sites',
       'Talked to a senior or friend who’d been', 'Visited or emailed the IR office', 'Shortlisted universities',
@@ -1027,92 +795,104 @@ const BRANCH_B = [ // started but didn't finish (Q18 options 3, 4, 5)
       'Arranged documents, like transcripts, LOR or SOP', 'Applied for funding or a scholarship', 'Submitted the application',
     ] },
   { id: 'q27_moment_stopped', tier: 2, type: 'long_text',
-    title: 'What was the moment you stopped? Describe what was actually happening.' },
+    title: 'What made you stop? What was going on?' },
   { id: 'q28_decision_or_fade', tier: 2, type: 'single',
-    title: 'Was it a decision, or did it just fade?',
+    title: 'Did you decide, or did it fade?',
     options: ['I made a decision not to continue', 'It just faded, I got busy and it slipped', 'I missed a deadline', 'I was rejected or not selected', 'I got selected but chose not to go'] },
   { id: 'q29_biggest_blocker', tier: 2, type: 'single',
-    title: 'What was the single biggest blocker?',
+    title: 'What was the biggest blocker?',
     options: ['Cost or funding', 'Course mapping or credit transfer', 'Departmental or DAPC approval', 'Missing or unclear information',
       'Deadline passed', 'CGPA or eligibility', 'Placement or internship clash', 'Family', 'Visa or paperwork', 'Changed my mind about wanting to go', 'Other'] },
   { id: 'q29_detail_other', tier: 2, type: 'short_text', condition: (a) => a.q29_biggest_blocker === 'Other',
     title: 'What was it?' },
   { id: 'q30_hard_wall', tier: 2, type: 'single',
-    title: 'Was that blocker a hard wall, or something you might have got past with better information or help?',
+    title: 'Could better info or help have got you past it?',
     options: ['A hard wall, nothing would have changed it', 'Better information would probably have got me through',
       'Help from a person who’d done it would have got me through', 'Both of the above', 'Not sure'] },
   { id: 'q31_info_search', tier: 2, type: 'multi_chips',
-    title: 'When you looked for information, what happened?',
+    title: 'When you looked for info, what happened?',
     options: ['I found what I needed and trusted it', 'I found information but wasn’t sure it was current', 'I found contradictory answers',
       'I couldn’t find it at all', 'I found it but only after it was too late', 'I didn’t know where to look', 'I got an answer from a person, not a document'] },
   { id: 'q32_wrong_belief', tier: 2, type: 'long_text', optional: true,
-    title: 'Was there anything you believed at the time that turned out to be wrong?' },
+    title: 'Did you believe anything that turned out wrong?' },
   { id: 'q33_would_have_gone', tier: 2, type: 'scale',
-    title: 'Would you have gone if the process had been clearer?', scaleLabels: ['no', 'definitely'] },
+    title: 'Would you have gone if it was clearer?', scaleLabels: ['No', 'Definitely'] },
   { id: 'q34_willing_to_talk', tier: 2, type: 'single', layout: 'row',
-    title: 'Would you be willing to talk to us for 20 minutes about what happened?', options: ['Yes', 'No'] },
+    title: 'Could we call you for 20 minutes?', options: ['Yes', 'No'] },
   { id: 'q34_contact', tier: 2, type: 'short_text', inputType: 'tel', condition: (a) => a.q34_willing_to_talk === 'Yes',
-    title: 'Phone or WhatsApp number', placeholder: 'So we can reach out' },
+    title: 'Phone or WhatsApp', placeholder: 'Number' },
 ];
 
 const BRANCH_C = [ // went / going now (Q18 option 6)
   { id: 'c_intro', tier: 2, type: 'info',
-    title: 'You’re the rarest and most useful group answering this. Thank you.',
-    subtitle: 'A few of these ask for numbers. Rough is completely fine.', primaryLabel: 'Continue' },
+    title: 'You’re the rarest group here. Thank you.',
+    subtitle: 'Rough numbers are fine.', primaryLabel: 'Continue' },
   { id: 'q35_university_country_term', tier: 2, type: 'short_text',
-    title: 'Which university, which country, and which semester or year?' },
+    title: 'Where and when did you go?', placeholder: 'University, country, semester' },
   { id: 'q36_total_cost', tier: 2, type: 'short_text',
-    title: 'Roughly what did the whole thing cost you, all in, in rupees?' },
+    title: 'What did it cost in total, in rupees?' },
   { id: 'q37_cost_breakdown', tier: 2, type: 'long_text',
-    title: 'Break that down as best you can: tuition, flights, visa, insurance, rent, food, local transport, setup, travel.' },
+    title: 'Roughly how did that split?', subtitle: 'Fees, flights, visa, insurance, rent, food, travel.' },
   { id: 'q38_blindsided_cost', tier: 2, type: 'long_text', optional: true,
-    title: 'What cost blindsided you? Something you hadn’t budgeted for.' },
+    title: 'Any cost that surprised you?' },
   { id: 'q39_funding', tier: 2, type: 'multi_chips',
-    title: 'How did you fund it?',
+    title: 'How did you pay for it?',
     options: ['Family', 'Scholarship from the host university', 'Indian government or institute scholarship', 'Education loan',
       'Savings or personal earnings', 'Fee waiver from the host', 'Other'], allowOtherText: true },
   { id: 'q40_mapping_experience', tier: 2, type: 'single',
-    title: 'How did course mapping and credit transfer actually go?',
+    title: 'How did course mapping go?',
     options: ['Smooth, everything mapped', 'Mostly fine, with some back and forth', 'Difficult, I lost credits or had to repeat something', 'Still unresolved', 'N/A'] },
   { id: 'q41_mapping_story', tier: 2, type: 'long_text',
-    title: 'Tell us what actually happened with mapping and your department or DAPC. The part nobody warns you about.' },
+    title: 'What happened with mapping and DAPC?', subtitle: 'The part nobody warns you about.' },
   { id: 'q42_wish_known', tier: 2, type: 'long_text',
-    title: 'What’s one thing you wish you’d known before you left?' },
+    title: 'One thing you wish you’d known before going?' },
   { id: 'q43_how_found_out', tier: 2, type: 'short_text',
-    title: 'How did you first find out exchange was even possible?' },
+    title: 'How did you first hear about exchange?' },
   { id: 'q44_would_redo', tier: 2, type: 'scale',
-    title: 'Would you do it again?', scaleLabels: ['no', 'absolutely'] },
+    title: 'Would you go again?', scaleLabels: ['No', 'Absolutely'] },
   { id: 'q45_junior_contact', tier: 2, type: 'single',
-    title: 'Would you let juniors contact you with questions?', options: ['Yes, happy to', 'Yes, but only over email', 'No'] },
+    title: 'Can juniors contact you with questions?', options: ['Yes, happy to', 'Yes, but only over email', 'No'] },
   { id: 'q45_contact_detail', tier: 2, type: 'short_text', condition: (a) => a.q45_junior_contact === 'Yes, happy to',
-    title: 'Phone, WhatsApp or email', placeholder: 'However juniors should reach you' },
+    title: 'Phone, WhatsApp or email', placeholder: 'How juniors can reach you' },
 ];
 
 const TIER3 = [ // everyone converges here (original Section 8, "Closing")
-  { id: 'q46_conversation_at_home', tier: 3, type: 'long_text',
-    title: 'Would a semester abroad need a conversation with your family? How would it go?' },
+  { id: 'q46_conversation_at_home', tier: 3, type: 'long_text', optional: true,
+    title: 'Would going need a talk with your family? How would it go?' },
   { id: 'q47_how_find_opportunities', tier: 3, type: 'multi_chips',
-    title: 'How do you usually hear about opportunities on campus?',
-    subtitle: 'Scholarships, internships, competitions. Pick all that apply.',
+    title: 'How do you usually hear about opportunities?',
+    subtitle: 'Scholarships, internships, competitions.',
     options: ['Institute email', 'Channel i', 'WhatsApp groups', 'Seniors telling me directly', 'Instagram or social media',
       'Posters and noticeboards', 'Department or faculty', 'Friends', 'I mostly find out late or not at all'] },
   { id: 'q48_missed_too_late', tier: 3, type: 'long_text', optional: true,
-    title: 'Have you missed something this year that you’d have wanted, purely because you found out too late?' },
+    title: 'Missed anything this year because you heard too late?' },
   { id: 'q49_apply_if', tier: 3, type: 'long_text',
-    title: 'What would have to be true for you to seriously apply? Finish the sentence: "I’d apply if…"' },
+    title: 'Finish this: “I’d apply if…”' },
   { id: 'q50_single_page_usefulness', tier: 3, type: 'scale',
-    title: 'Imagine one page with everything on it: real costs, real universities, real deadlines, and students you could ask. How useful would that be to you?',
-    scaleLabels: ['not useful', 'I’d use it today'] },
+    title: 'One page with real costs, universities, deadlines and seniors to ask. How useful?',
+    scaleLabels: ['Not useful', 'I’d use it today'] },
   { id: 'q51_anything_else', tier: 3, type: 'long_text', optional: true,
-    title: 'Anything else you want to say about this?' },
+    title: 'Anything else?' },
   { id: 'q52_contact_ok', tier: 3, type: 'single', layout: 'row',
-    title: 'Can we contact you if we have follow-up questions?', options: ['Yes', 'Yes, email is fine', 'No thanks'] },
+    title: 'Can we follow up with you?', options: ['Yes', 'Yes, email is fine', 'No thanks'] },
   { id: 'q52_contact_detail', tier: 3, type: 'short_text', inputType: 'tel',
     condition: (a) => a.q52_contact_ok === 'Yes',
     title: 'Phone or WhatsApp' },
+  // The pitch comes only after every research question, so seeing what we're
+  // building can't colour any answer above. A "Yes" here becomes a waitlist
+  // sign-up (source = survey) once the email below is given.
+  { id: 'pitch_launch_notify', tier: 3, type: 'pitch',
+    title: 'Here’s what we’re building.',
+    subtitle: 'One place where IITR students can see:',
+    points: [
+      'Which universities you could get, for your branch and CGPA',
+      'What it really costs, from students who went',
+      'Which courses got credit, and seniors to ask',
+    ],
+    options: ['Yes, tell me when it launches', 'Not now'] },
   { id: 'email_signup', tier: 3, type: 'short_text', inputType: 'email',
-    title: 'Last one. Where should we send the results?',
-    subtitle: 'Real costs, the partner university list, and what other students said. Nothing else, no spam.',
+    title: 'Last one: your email',
+    subtitle: 'We’ll send you what we find. Nothing else.',
     placeholder: 'you@iitr.ac.in' },
 ];
 
@@ -1126,6 +906,14 @@ let session = loadLocal() || {
 
 function persistSession() {
   saveLocal(session);
+}
+
+/** Which link they came from: each channel gets its own link, e.g. ?from=hostel-rjb. */
+function linkChannel() {
+  try {
+    const v = new URLSearchParams(location.search).get('from');
+    return v ? v.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 60) || null : null;
+  } catch { return null; }
 }
 
 function recordAnswer(questionId, value) {
@@ -1224,22 +1012,11 @@ const stage = document.getElementById('stepStage');
 const backBtn = document.getElementById('backBtn');
 const headerStatus = document.getElementById('headerStatus');
 const progressFill = document.getElementById('progressFill');
-const sideHeadline = document.getElementById('sideHeadline');
-const stageList = document.getElementById('stageList');
-const routePlane = document.getElementById('routePlane');
-const routeDestLabel = document.getElementById('routeDestLabel');
+const headerCount = document.getElementById('headerCount');
 
-// Section names double as the mobile header label and the desktop stage list.
-// There is deliberately no question counter anywhere: a visible "1 / 30"
-// makes people quit before they start; a short list of named stages and a
-// progress rule tell them the same thing without the dread.
+// Section name in the header, plus "2/4" for the section. Never a question
+// counter: a visible "7 / 35" makes people quit before they start.
 const TIER_LABELS = { 0: 'Getting started', 1: 'What you know', 2: 'Your story', 3: 'Wrapping up' };
-const SIDE_HEADLINES = {
-  0: 'A semester abroad, honestly.',
-  1: 'No pressure. Guessing is fine.',
-  2: { A: 'What’s actually in the way?', B: 'Where did it break down?', C: 'Tell us how it really went.' },
-  3: 'Almost done.',
-};
 // Rough length of a branch before Q18 picks one, so the progress rule
 // doesn't leap forward and then crawl once the branch is known.
 const EST_BRANCH_LENGTH = 11;
@@ -1258,20 +1035,52 @@ function render() {
   session.furthestTier = Math.max(session.furthestTier, step.tier);
   document.body.classList.toggle('is-welcome', step.type === 'checkin');
   headerStatus.textContent = TIER_LABELS[step.tier] || '';
+  headerCount.textContent = (step.tier + 1) + '/4';
   backBtn.classList.toggle('visible', !(session.pointer.tier === 0 && session.pointer.index === 0));
   updateProgress(step.tier);
 
+  const ticket = el('div', 'ticket');
+  ticket.appendChild(buildTicketHead(step));
+  ticket.appendChild(el('div', 'ticket-perf'));
   const card = el('div', 'step-card');
+  ticket.appendChild(card);
   stage.innerHTML = '';
-  stage.appendChild(card);
+  stage.appendChild(ticket);
   window.scrollTo({ top: 0 });
 
   const renderers = {
     checkin: renderCheckin, info: renderInfo, slider: renderSlider, scale: renderScale, single: renderSingle,
     multi_chips: renderMultiChips, short_text: renderText, long_text: renderText,
-    reveal: renderReveal, single_from_prior: renderSingleFromPrior,
+    reveal: renderReveal, single_from_prior: renderSingleFromPrior, pitch: renderPitch,
   };
   (renderers[step.type] || renderInfo)(card, step);
+}
+
+/* ---- ticket strip: IITR to ABROAD, the plane moves along with progress ---- */
+let routeProgress = 0;
+function passengerName() {
+  const n = (session.answers.respondent_name || '').trim().split(/\s+/)[0];
+  return n ? n.toUpperCase().slice(0, 14) : 'GUEST';
+}
+function buildRoute(destCode, pct) {
+  const route = el('div', 'route');
+  const p = Math.min(94, Math.max(6, pct));
+  const line = el('div', 'route-line');
+  line.style.setProperty('--p', p + '%');
+  const plane = el('span', 'route-plane', '✈');
+  plane.style.left = p + '%';
+  line.appendChild(plane);
+  route.append(el('span', 'route-code', 'IITR'), line, el('span', 'route-code', destCode));
+  return route;
+}
+function buildTicketHead(step) {
+  const head = el('div', 'ticket-head');
+  head.appendChild(buildRoute('ABRD', step.type === 'checkin' ? 6 : routeProgress));
+  return head;
+}
+function seatCode() {
+  const h = parseInt(session.session_id.replace(/-/g, '').slice(0, 6), 16) || 0;
+  return (h % 30 + 1) + 'ABCDEF'[h % 6];
 }
 
 function goNext() {
@@ -1299,25 +1108,9 @@ function updateProgress(currentTier) {
   }
   const pct = currentTier === 0 && session.pointer.index === 0 ? 0 : Math.min(96, Math.max(4, Math.round((done / Math.max(1, total)) * 100)));
   progressFill.style.width = pct + '%';
-  routePlane.style.left = Math.max(4, pct) + '%';
-  renderStageList(currentTier);
-  let headline = SIDE_HEADLINES[currentTier];
-  if (headline && typeof headline === 'object') headline = headline[session.branch] || 'Tell us how it really went.';
-  sideHeadline.textContent = headline || sideHeadline.textContent;
+  routeProgress = pct;
 }
 
-function renderStageList(currentTier, allDone = false) {
-  stageList.innerHTML = '';
-  Object.entries(TIER_LABELS).forEach(([tier, label]) => {
-    const t = Number(tier);
-    const state = allDone || t < currentTier ? 'done' : t === currentTier ? 'current' : '';
-    const li = el('li', 'stage-item ' + state);
-    if (state === 'current') li.setAttribute('aria-current', 'step');
-    li.appendChild(el('span', 'stage-mark'));
-    li.appendChild(el('span', null, label));
-    stageList.appendChild(li);
-  });
-}
 
 /** Enter submits single-line inputs; Ctrl/Cmd+Enter submits a textarea. */
 function submitOnEnter(input, btn) {
@@ -1336,9 +1129,12 @@ function renderCheckin(card, step) {
   card.appendChild(el('div', 'step-subtitle', step.subtitle));
 
   if (step.points) {
+    const more = el('details', 'more');
+    more.appendChild(el('summary', null, 'Why answer?'));
     const ul = el('ul', 'welcome-points');
     step.points.forEach(p => ul.appendChild(el('li', null, p)));
-    card.appendChild(ul);
+    more.appendChild(ul);
+    card.appendChild(more);
   }
 
   // The name only personalises the result card, so it never blocks starting.
@@ -1358,6 +1154,9 @@ function renderCheckin(card, step) {
   btn.onclick = () => {
     const name = input.value.trim();
     if (name) recordAnswer('respondent_name', name);
+    else delete session.answers.respondent_name;
+    const channel = linkChannel();
+    if (channel && !session.answers.from_channel) recordAnswer('from_channel', channel);
     goNext();
   };
   submitOnEnter(input, btn);
@@ -1395,26 +1194,28 @@ function renderSlider(card, step) {
   // number, or say they have no idea.
   let touched = !!existing;
 
-  const valueEl = el('div', 'slider-value', formatMoney(value, step.unit));
+  if (!touched) value = step.min;
+  const valueEl = el('div', 'slider-value' + (touched ? '' : ' empty'), touched ? formatMoney(value, step.unit) : step.unit + ' ?');
   card.appendChild(valueEl);
 
   const input = document.createElement('input');
   input.type = 'range'; input.min = step.min; input.max = step.max; input.step = step.step; input.value = value;
   card.appendChild(input);
 
-  const hint = el('div', 'slider-hint', 'Drag the slider or type an amount.');
+  const hint = el('div', 'slider-hint', 'Drag, or type an amount below.');
   card.appendChild(hint);
 
   const exactRow = el('div', 'exact-amount-row');
   exactRow.appendChild(el('label', null, step.unit));
   const exactInput = document.createElement('input');
   exactInput.className = 'exact-amount-input'; exactInput.type = 'text'; exactInput.inputMode = 'numeric';
-  exactInput.value = Number(value).toLocaleString('en-IN');
+  exactInput.value = touched ? Number(value).toLocaleString('en-IN') : '';
+  exactInput.placeholder = 'Amount in rupees';
   exactRow.appendChild(exactInput);
   card.appendChild(exactRow);
 
   input.oninput = () => {
-    value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit);
+    value = Number(input.value); valueEl.textContent = formatMoney(value, step.unit); valueEl.classList.remove('empty');
     exactInput.value = value.toLocaleString('en-IN');
     if (noIdea) setNoIdea(false);
     markTouched();
@@ -1422,14 +1223,14 @@ function renderSlider(card, step) {
   exactInput.oninput = () => {
     const digits = exactInput.value.replace(/[^\d]/g, '');
     const n = Math.min(step.max, Math.max(step.min, Number(digits) || 0));
-    value = n; valueEl.textContent = formatMoney(value, step.unit); input.value = n;
+    value = n; valueEl.textContent = formatMoney(value, step.unit); valueEl.classList.remove('empty'); input.value = n;
     if (noIdea) setNoIdea(false);
     markTouched();
   };
-  exactInput.onblur = () => { exactInput.value = value.toLocaleString('en-IN'); };
+  exactInput.onblur = () => { if (touched && !noIdea) exactInput.value = value.toLocaleString('en-IN'); };
 
   const noIdeaBtn = el('button', 'no-idea-btn' + (noIdea ? ' active' : ''), step.noIdeaLabel || 'No idea');
-  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; exactInput.style.opacity = v ? '0.4' : '1'; valueEl.style.opacity = (v || !touched) ? '0.35' : '1'; }
+  function setNoIdea(v) { noIdea = v; noIdeaBtn.classList.toggle('active', v); input.style.opacity = v ? '0.4' : '1'; exactInput.style.opacity = v ? '0.4' : '1'; valueEl.style.opacity = v ? '0.35' : '1'; }
   setNoIdea(noIdea);
   noIdeaBtn.onclick = () => { setNoIdea(!noIdea); markTouched(); };
   card.appendChild(noIdeaBtn);
@@ -1437,7 +1238,7 @@ function renderSlider(card, step) {
   const row = el('div', 'action-row');
   const btn = el('button', 'btn btn-primary btn-full', 'Continue');
   btn.disabled = !touched;
-  function markTouched() { touched = true; btn.disabled = false; hint.style.visibility = 'hidden'; if (!noIdea) valueEl.style.opacity = '1'; }
+  function markTouched() { touched = true; btn.disabled = false; hint.style.visibility = 'hidden'; }
   if (touched) hint.style.visibility = 'hidden';
   exactInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && touched) btn.click(); });
   btn.onclick = () => commitAndAdvance(step, { value: noIdea ? null : value, no_idea: noIdea });
@@ -1497,6 +1298,20 @@ function renderSingle(card, step) {
   // Optional questions whose options already include "Prefer not to say"
   // don't need a second, identical escape hatch underneath.
   if (step.optional && !step.options.includes('Prefer not to say')) card.appendChild(skipRow(step));
+}
+
+/* ---- pitch: what we're building, then a plain choice ---- */
+function renderPitch(card, step) {
+  const points = el('ol', 'pitch-points');
+  step.points.forEach((p, i) => {
+    const li = el('li');
+    li.appendChild(el('span', 'pitch-num', String(i + 1).padStart(2, '0')));
+    li.appendChild(el('span', null, p));
+    points.appendChild(li);
+  });
+  renderSingle(card, step);
+  // Slot the points between the subtitle and the options.
+  card.insertBefore(points, card.querySelector('.options-list'));
 }
 
 /* ---- single choice built from a prior multi-select answer (Q23) ---- */
@@ -1646,7 +1461,7 @@ const HINT_FOR_LENGTH = [
   { min: DETAILED_WORDS, text: 'Really useful, thank you.' },
   { min: 6, text: 'Nice. Anything else that comes to mind?' },
   { min: 1, text: 'Good start. Why do you think that?' },
-  { min: 0, text: 'Your own words, the more detail the better.' },
+  { min: 0, text: 'In your own words.' },
 ];
 
 /* ---- voice input (Web Speech API; Chrome / Android / Safari). Returns null
@@ -1721,7 +1536,7 @@ async function renderReveal(card, step) {
   const stats = await fetchStatsFor(step.statsFor);
   statWrap.innerHTML = '';
   if (!stats.length) {
-    statWrap.appendChild(el('div', 'step-subtitle', 'You’re one of the first to answer. Thank you! We’ll have real comparisons soon.'));
+    statWrap.appendChild(el('div', 'step-subtitle', 'You’re one of the first to answer. Comparisons show up as more people join.'));
     return;
   }
   stats.forEach(s => {
@@ -1786,7 +1601,7 @@ async function buildUnlockBar() {
 }
 
 /* ============================================================================
-   8. DEBRIEF + BOARDING PASS
+   8. END SCREEN: ticket flies off, boarding pass flies in
    ========================================================================== */
 function renderDebrief() {
   session.completed = true;
@@ -1802,157 +1617,152 @@ function renderDebrief() {
       ok_junior_contact: session.answers.q45_junior_contact === 'Yes, happy to' || session.answers.q45_junior_contact === 'Yes, but only over email',
       ok_interview_contact: session.answers.q34_willing_to_talk === 'Yes',
     });
+    if (session.answers.pitch_launch_notify === 'Yes, tell me when it launches') {
+      queueWrite({
+        kind: 'waitlist', session_id: session.session_id, email,
+        source: 'survey', channel: session.answers.from_channel || null,
+      });
+    }
   }
 
-  stage.innerHTML = '';
   backBtn.classList.remove('visible');
-  headerStatus.textContent = 'Done';
+  headerStatus.textContent = 'Boarding';
+  headerCount.textContent = '';
   document.body.classList.remove('is-welcome');
   progressFill.style.width = '100%';
-  routePlane.style.left = '96%';
-  renderStageList(3, true);
-  routeDestLabel.textContent = statusForBranch();
-  sideHeadline.textContent = 'Your boarding pass is ready.';
-  document.getElementById('sideFootnote').style.visibility = 'hidden'; // "pick up where you left off" no longer applies
 
-  const card = el('div', 'step-card');
-
-  const stamp = el('div', 'stamp');
-  stamp.appendChild(el('div', 'stamp-line1', 'Checked'));
-  stamp.appendChild(el('div', 'stamp-line2', 'In'));
-  card.appendChild(stamp);
-
-  card.appendChild(el('div', 'step-title', 'Thank you, genuinely.'));
-  card.appendChild(el('div', 'step-subtitle',
-    'IITR does have semester exchange agreements with universities abroad, run through the International Relations office. Applications typically open early in the calendar year. We’re deliberately not naming numbers yet. That’s what this survey is for, but we’ll send what we find to the email you gave us.'));
-
-  card.appendChild(buildBoardingPass());
-
-  const shareRow = el('div', 'action-row');
-  const shareBtn = el('button', 'btn btn-primary btn-full', 'Share your boarding pass');
-  shareBtn.onclick = shareBoardingPass;
-  shareRow.appendChild(shareBtn);
-  card.appendChild(shareRow);
-
-  card.appendChild(el('div', 'step-subtitle',
-    'If you know someone who’s been on exchange, or who started an application and dropped it, please send them this. Those two groups are the hardest for us to reach and the most useful to hear from.'));
-
-  stage.appendChild(card);
-}
-
-function statusForBranch() {
-  return { A: 'Standby', B: 'Delayed', C: 'Boarded' }[session.branch] || 'Checked in';
-}
-
-function sequenceCode() {
-  return 'ERC' + session.session_id.replace(/-/g, '').slice(0, 6).toUpperCase();
-}
-
-function gateCode() {
-  const dept = session.answers.q4_department;
-  if (!dept) return 'TBD';
-  const letters = dept.split(/\s+/).map(w => w.replace(/[^A-Za-z]/g, '')[0]).filter(Boolean).join('').toUpperCase();
-  return letters ? letters.slice(0, 3) : 'TBD';
-}
-
-function destinationField() {
-  if (session.branch === 'C' && session.answers.q35_university_country_term) {
-    return session.answers.q35_university_country_term.toUpperCase();
+  // The last ticket flies off with a plane, then the boarding pass flies in.
+  // Reloading a finished survey skips straight to the pass.
+  const last = stage.querySelector('.ticket');
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (last && !reduce) {
+    last.classList.add('fly-away');
+    const plane = el('div', 'fly-plane', '✈');
+    document.body.appendChild(plane);
+    setTimeout(() => plane.remove(), 1200);
+    setTimeout(() => showEnd(true), 560);
+  } else {
+    showEnd(false);
   }
-  return 'DESTINATION TBD';
 }
 
+function showEnd(animate) {
+  stage.innerHTML = '';
+  window.scrollTo({ top: 0 });
+  const wrap = el('div', 'end-stage');
+  const pass = buildBoardingPass();
+  if (animate) pass.classList.add('fly-in');
+  wrap.appendChild(pass);
+
+  const copy = el('div', 'end-copy');
+  const name = (session.answers.respondent_name || '').trim().split(/\s+/)[0];
+  copy.appendChild(el('h1', 'step-title', name ? 'You’re checked in, ' + name + '.' : 'You’re checked in.'));
+  copy.appendChild(el('div', 'step-subtitle', 'We’ll email you what we find.'));
+  if (session.answers.pitch_launch_notify === 'Yes, tell me when it launches') {
+    copy.appendChild(el('div', 'done-tag', 'You’re on the launch list'));
+  }
+  wrap.appendChild(copy);
+
+  const actions = el('div', 'end-actions');
+  const shareBtn = el('button', 'btn btn-primary', 'Share my boarding pass');
+  shareBtn.onclick = () => sharePass(pass, shareBtn);
+  const linkBtn = el('button', 'btn btn-ghost', 'Send the survey to a friend');
+  linkBtn.onclick = shareSurvey;
+  actions.append(shareBtn, linkBtn);
+  wrap.appendChild(actions);
+  stage.appendChild(wrap);
+}
+
+const PASS_STATUS = { A: 'Standby', B: 'Rebooking', C: 'Landed' };
 function buildBoardingPass() {
-  const ticket = el('div', 'ticket'); ticket.id = 'boardingPassCard';
-  const body = el('div', 'ticket-body');
-  const main = el('div', 'ticket-main');
+  const pass = el('div', 'pass');
+  const top = el('div', 'pass-top');
+  top.appendChild(el('span', null, 'Boarding pass'));
+  if (session.answers.pitch_launch_notify === 'Yes, tell me when it launches') top.appendChild(el('span', 'pass-class', 'Priority'));
+  pass.appendChild(top);
 
-  const topline = el('div', 'ticket-topline');
-  topline.appendChild(el('span', null, 'Boarding Pass'));
-  topline.appendChild(el('span', null, 'Exchange Reality Check'));
-  main.appendChild(topline);
+  const body = el('div', 'pass-body');
+  const dest = session.branch === 'C' && session.answers.q35_university_country_term
+    ? String(session.answers.q35_university_country_term).replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'ABRD'
+    : 'ABRD';
+  body.appendChild(buildRoute(dest, 50));
+  body.appendChild(el('div', 'pass-name', (session.answers.respondent_name || 'Guest').trim().slice(0, 40)));
+  const grid = el('div', 'pass-grid');
+  const cell = (label, value) => { const d = el('div'); d.textContent = label; const b = el('b', null, value); d.appendChild(b); grid.appendChild(d); return b; };
+  cell('Seat', seatCode());
+  cell('Gate', gateCode());
+  cell('Status', PASS_STATUS[session.branch] || 'Checked in').classList.add('pass-status');
+  body.appendChild(grid);
+  pass.appendChild(body);
+  pass.appendChild(el('div', 'ticket-perf'));
 
-  main.appendChild(el('div', 'ticket-passenger-label', 'Passenger'));
-  main.appendChild(el('div', 'ticket-passenger-name', (session.answers.respondent_name || 'Guest').toUpperCase()));
-
-  const grid = el('div', 'ticket-grid');
-  addField(grid, 'From', 'IIT Roorkee (IITR)');
-  addField(grid, 'To', destinationField());
-  addField(grid, 'Status', statusForBranch());
-  addField(grid, 'Gate', gateCode());
-  addField(grid, 'Seq', sequenceCode());
-  addField(grid, 'Date', new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
-  main.appendChild(grid);
-  body.appendChild(main);
-
-  body.appendChild(el('div', 'ticket-divider'));
-
-  const answers = el('div', 'ticket-answers');
-  answers.appendChild(el('div', 'ticket-answers-label', 'Your answers'));
-  const guess = session.answers.q10_cost_guess;
-  addAnswerRow(answers, 'Your cost guess', guess && !guess.no_idea ? formatMoney(guess.value, '₹') : 'No idea');
-  addAnswerRow(answers, 'Awareness', session.answers.q8_awareness || 'N/A');
-  addAnswerRow(answers, 'Would use one info page', session.answers.q50_single_page_usefulness ? session.answers.q50_single_page_usefulness + ' / 5' : 'N/A');
-  addAnswerRow(answers, 'Programme', session.answers.q2_programme || 'N/A');
-  body.appendChild(answers);
-  ticket.appendChild(body);
-
-  ticket.appendChild(el('div', 'ticket-divider'));
-
-  const stub = el('div', 'ticket-stub');
-  const seqBlock = el('div', 'ticket-stub-seq');
-  const seqLabel = el('span', null, 'Sequence');
-  seqBlock.appendChild(seqLabel);
-  seqBlock.appendChild(document.createTextNode(sequenceCode()));
-  stub.appendChild(seqBlock);
-  const barcode = el('div', 'barcode');
-  barcode.style.background = buildBarcodeGradient(session.session_id);
-  stub.appendChild(barcode);
-  ticket.appendChild(stub);
-
-  return ticket;
+  const foot = el('div', 'pass-foot');
+  foot.appendChild(buildBarcode());
+  pass.appendChild(foot);
+  return pass;
 }
-function addField(container, label, value) {
-  const d = document.createElement('div');
-  d.appendChild(el('div', 'ticket-field-label', label));
-  d.appendChild(el('div', 'ticket-field-value', String(value)));
-  container.appendChild(d);
+function gateCode() {
+  const d = String(session.answers.q4_department || '');
+  const letters = d.split(/[^A-Za-z]+/).filter(w => w.length > 2 && !/^(and|of|the)$/i.test(w)).map(w => w[0]).join('').toUpperCase();
+  return letters.slice(0, 3) || 'TBD';
 }
-function addAnswerRow(container, label, value) {
-  const row = el('div', 'ticket-answer-row');
-  row.appendChild(el('span', null, label));
-  row.appendChild(el('b', null, String(value)));
-  container.appendChild(row);
-}
-/** A deterministic, unique-looking barcode pattern derived from the session id. */
-function buildBarcodeGradient(seed) {
-  const chars = seed.replace(/-/g, '').split('');
-  let pos = 0; const stops = [];
-  for (let i = 0; i < chars.length && pos < 100; i++) {
-    const barWidth = ((parseInt(chars[i], 16) || 1) % 4) + 1.5;
-    stops.push(`var(--ink) ${pos}%`, `var(--ink) ${pos + barWidth}%`, `transparent ${pos + barWidth}%`, `transparent ${pos + barWidth + 1.2}%`);
-    pos += barWidth + 1.2;
+function buildBarcode() {
+  const bar = el('div', 'barcode');
+  const raw = session.session_id.replace(/-/g, '');
+  const hex = raw + raw.split('').reverse().join('');
+  for (let i = 0; i < hex.length; i++) {
+    const v = parseInt(hex[i], 16);
+    const b = document.createElement('i');
+    b.style.width = (1 + (v % 3)) + 'px';
+    b.style.opacity = v % 5 === 0 ? '0' : '1';
+    bar.appendChild(b);
   }
-  return `repeating-linear-gradient(90deg, ${stops.join(', ')})`;
+  return bar;
 }
 
-async function shareBoardingPass() {
-  const node = document.getElementById('boardingPassCard');
+// The boarding pass as an image, for stories and WhatsApp. The image library
+// is only fetched when someone taps Share, so the survey itself stays light.
+function loadHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = () => resolve(window.html2canvas); s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+async function sharePass(node, btn) {
+  const label = btn.textContent;
+  btn.textContent = 'Preparing…'; btn.disabled = true;
   try {
-    const canvas = await html2canvas(node, { backgroundColor: '#F7F1E2', scale: 2 });
-    canvas.toBlob(async (blob) => {
-      const file = new File([blob], 'exchange-reality-check-boarding-pass.png', { type: 'image/png' });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'Exchange Reality Check' }); return; } catch { /* cancelled or unsupported, fall through */ }
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'exchange-reality-check-boarding-pass.png';
+    const h2c = await loadHtml2Canvas();
+    node.classList.remove('fly-in');
+    const canvas = await h2c(node, { backgroundColor: '#F4F4F2', scale: 2 });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const file = new File([blob], 'boarding-pass.png', { type: 'image/png' });
+    const url = location.origin + location.pathname;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Exchange Reality Check', text: 'Checked in. Your turn: ' + url }); } catch { /* cancelled */ }
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'boarding-pass.png';
       document.body.appendChild(a); a.click(); a.remove();
-      showToast('Saved. Share it from your photos.');
-    }, 'image/png');
+      showToast('Saved. Share it from your downloads.');
+    }
   } catch {
-    showToast('Couldn’t generate an image. Try a screenshot instead.');
+    showToast('Couldn’t make the image. A screenshot works too.');
+  } finally {
+    btn.textContent = label; btn.disabled = false;
   }
+}
+
+async function shareSurvey() {
+  const url = location.origin + location.pathname;
+  const text = 'IITR students: a few minutes on why so few of us do a semester abroad.';
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Exchange Reality Check', text, url }); return; } catch { return; }
+  }
+  try { await navigator.clipboard.writeText(text + ' ' + url); showToast('Link copied. Paste it anywhere.'); }
+  catch { showToast(url); }
 }
 
 /* ============================================================================
@@ -1984,7 +1794,7 @@ async function maybeReflect(step, answerText) {
   if (!isConfigured.supabase && !isConfigured.sheets) {
     const banner = document.getElementById('devBanner');
     banner.style.display = 'block';
-    banner.textContent = 'Demo mode. Supabase and Sheets aren’t configured yet, so answers only save to this browser. See README.md.';
+    banner.textContent = TEST_MODE ? 'Test mode: nothing you answer is saved.' : 'Demo mode. Supabase and Sheets aren’t configured yet, so answers only save to this browser. See README.md.';
   }
   // NOTE: session.pointer === null is a meaningful state (the survey is
   // complete; see advancePointer()'s final `return null` and

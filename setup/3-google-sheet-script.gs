@@ -30,11 +30,16 @@ var TAB_SUMMARY = 'Summary';
 var TAB_RAW_ANSWERS = 'Raw answers';
 var TAB_RAW_SESSIONS = 'Raw sessions';
 var TAB_CONTACTS = 'Contacts';
+var TAB_EXCLUDED = 'Excluded';
+var TAB_TYPED = 'Typed numbers';
+var TAB_WAITLIST = 'Waitlist';
+var WAITLIST_HEADERS = ['Email', 'Source', 'Channel (link tag)', 'Joined (IST)', 'Response ID'];
 var TZ = 'Asia/Kolkata';
 
 // [question id, column heading, section]. Order = column order.
 var QUESTIONS = [
   ["respondent_name", "Name", 0],
+  ["from_channel", "Came from (link tag)", 0],
   ["q8_awareness", "Knew exchange was possible?", 0],
   ["q10_cost_guess", "Cost guess for 1 semester", 0],
   ["q12_confidence", "Confidence in that guess", 0],
@@ -48,6 +53,8 @@ var QUESTIONS = [
   ["q2pg_detail", "[PG] What they know about the PG route", 1],
   ["q9_name_university", "A partner university they can name", 1],
   ["q13_who_handles", "Who handles exchange at IITR?", 1],
+  ["q17_where_look", "Where they look for exchange info", 1],
+  ["q17_where_look_other_text", "Where they look (other)", 1],
   ["q14_cgpa_requirement", "Is there a minimum CGPA?", 1],
   ["q14_detail", "CGPA cutoff they think", 1],
   ["q15_application_window", "When applications open", 1],
@@ -95,6 +102,7 @@ var QUESTIONS = [
   ["q51_anything_else", "Anything else", 3],
   ["q52_contact_ok", "OK to follow up?", 3],
   ["q52_contact_detail", "Phone for follow-up", 3],
+  ["pitch_launch_notify", "Wants launch notification?", 3],
   ["email_signup", "Email", 3]
 ];
 var SECTIONS = ['Getting started', 'What you know', 'Your story', 'Wrapping up'];
@@ -103,12 +111,12 @@ var GROUPS = { A: 'Never applied', B: "Started, didn't finish", C: 'Went / going
 
 // Questions counted in the Summary tab (multiple choice and 1-5 scales).
 var BREAKDOWN = [
-  'q8_awareness', 'q12_confidence', 'q2_programme', 'q3_year', 'q5_gender', 'q7_family_situation',
-  'q2pg_availability', 'q14_cgpa_requirement', 'q15_application_window', 'q16_credits_count', 'q18_category',
+  'from_channel', 'q8_awareness', 'q12_confidence', 'q2_programme', 'q3_year', 'q5_gender', 'q7_family_situation',
+  'q2pg_availability', 'q17_where_look', 'q14_cgpa_requirement', 'q15_application_window', 'q16_credits_count', 'q18_category',
   'q21_sounds_like_you', 'q22_barriers', 'q23_biggest_barrier', 'q24_if_removed', 'q25_suggested_by_someone',
   'q26_how_far', 'q28_decision_or_fade', 'q29_biggest_blocker', 'q30_hard_wall', 'q31_info_search',
   'q33_would_have_gone', 'q34_willing_to_talk', 'q39_funding', 'q40_mapping_experience', 'q44_would_redo',
-  'q45_junior_contact', 'q47_how_find_opportunities', 'q50_single_page_usefulness', 'q52_contact_ok'
+  'q45_junior_contact', 'q47_how_find_opportunities', 'q50_single_page_usefulness', 'pitch_launch_notify', 'q52_contact_ok'
 ];
 
 var FIXED_COLS = ['#', 'Name', 'Started (IST)', 'Last activity (IST)', 'Status', 'Group'];
@@ -141,6 +149,9 @@ function doPost(e) {
 
     } else if (body.kind === 'contact') {
       upsertContact_(ss, body, when);
+
+    } else if (body.kind === 'waitlist') {
+      upsertWaitlist_(ss, body, when);
 
     } else {
       return json_({ ok: false, error: 'unknown kind: ' + body.kind });
@@ -398,8 +409,12 @@ function refreshSummary() {
 
   var data = (src && src.getLastRow() > 1) ? src.getRange(1, 1, src.getLastRow(), src.getLastColumn()).getDisplayValues() : [[]];
   var headers = data[0];
-  var people = data.slice(1);
   var col = function (h) { return headers.indexOf(h); };
+  // Test or junk responses listed on the "Excluded" tab are left out of every
+  // number below. They stay in "All responses" so nothing is ever deleted.
+  var excluded = excludedIds_(ss);
+  var everyone = data.slice(1);
+  var people = everyone.filter(function (r) { return !excluded[r[col(ID_COL)]]; });
   var out = [];
   var boldRows = [], titleRows = [];
   var line = function (a, b, c) { out.push([a == null ? '' : a, b == null ? '' : b, c == null ? '' : c]); };
@@ -416,6 +431,55 @@ function refreshSummary() {
   var groupCounts = {};
   people.forEach(function (r) { var g = r[col('Group')] || '(not reached yet)'; groupCounts[g] = (groupCounts[g] || 0) + 1; });
   Object.keys(groupCounts).forEach(function (g) { line('Group: ' + g, groupCounts[g]); });
+  line('Left out as test rows (see "Excluded" tab)', everyone.length - people.length);
+  line();
+
+  // The findings table from the Notion plan ("After these interview rounds").
+  line('Findings table'); titleRows.push(out.length);
+  line('Finding', 'Value', 'Out of'); boldRows.push(out.length);
+  var share = function (header, test) {
+    var c = col(header);
+    var answered = c < 0 ? [] : people.filter(function (r) { var v = String(r[c] || ''); return v && v !== '(skipped)'; });
+    if (!answered.length) return ['-', 0];
+    var hits = answered.filter(function (r) { return test(String(r[c])); }).length;
+    return [Math.round(100 * hits / answered.length) + '%', answered.length];
+  };
+  var finding = function (label, res) { line(label, res[0], res[1]); };
+  finding('Didn’t know exchange existed', share('Knew exchange was possible?', function (v) { return /^No, this is news/.test(v); }));
+  finding('Had only heard of it vaguely', share('Knew exchange was possible?', function (v) { return /^I.d heard/.test(v); }));
+  finding('Considered it but never applied', share('Their situation', function (v) { return /^I thought about it/.test(v); }));
+  finding('Never seriously considered it', share('Their situation', function (v) { return /^I.ve never/.test(v); }));
+  finding('Started or applied, but didn’t go', share('Their situation', function (v) { return /^I started|^I applied/.test(v); }));
+  var cc = col('Cost guess for 1 semester');
+  var guesses = cc < 0 ? [] : people.map(function (r) { return Number(String(r[cc] || '').replace(/[^0-9]/g, '')); })
+    .filter(function (n) { return n > 0; }).sort(function (a, b) { return a - b; });
+  var mid = Math.floor(guesses.length / 2);
+  var median = !guesses.length ? '-' : '₹' + indianNumber_(guesses.length % 2 ? guesses[mid] : (guesses[mid - 1] + guesses[mid]) / 2);
+  line('Median cost guess', median, guesses.length);
+  var typed = typedNumbers_(ss);
+  var typedLine = function (label) { line(label + ' (from "Typed numbers" tab)', typed[label] || '-', ''); };
+  typedLine('Real cost of one semester');
+  finding('Named a partner university (check names by hand)', share('A partner university they can name', function (v) { return !/^(no idea|don.?t know|idk|-)$/i.test(v.trim()); }));
+  typedLine('Applicants per seat');
+  typedLine('Returnees who agreed to share details');
+  line();
+
+  // Launch waitlist. The two sources are kept apart on purpose: survey
+  // finishers are already interested, landing-page sign-ups are the honest
+  // demand signal.
+  var wl = waitlistRows_(ss).filter(function (w) { return !excluded[w.id]; });
+  var fromSurvey = wl.filter(function (w) { return w.source === 'survey'; }).length;
+  var fromLanding = wl.filter(function (w) { return w.source === 'landing'; }).length;
+  line('Launch waitlist'); titleRows.push(out.length);
+  line('Source', 'Sign-ups', 'Rate'); boldRows.push(out.length);
+  line('From the survey (already interested, overstates demand)', fromSurvey,
+    completed ? Math.round(100 * fromSurvey / completed) + '% of finishers' : '-');
+  line('From the landing page (the honest signal)', fromLanding, '');
+  var byChannel = {};
+  wl.forEach(function (w) { var k = (w.channel || '(no link tag)') + ' · ' + w.source; byChannel[k] = (byChannel[k] || 0) + 1; });
+  Object.keys(byChannel).sort(function (a, b) { return byChannel[b] - byChannel[a]; }).forEach(function (k) {
+    line('   ' + k, byChannel[k], '');
+  });
   line();
 
   // Responses per day
@@ -482,6 +546,99 @@ function refreshSummary() {
 /* ===========================================================================
    Helpers
    ========================================================================= */
+/** Response IDs listed in column A of the "Excluded" tab (created if missing). */
+function waitlistSheet_(ss) {
+  var sheet = ss.getSheetByName(TAB_WAITLIST);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_WAITLIST);
+    sheet.getRange(1, 1, 1, WAITLIST_HEADERS.length).setValues([WAITLIST_HEADERS])
+      .setFontWeight('bold').setBackground('#123049').setFontColor('#F3ECDC');
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, sheet.getMaxRows(), WAITLIST_HEADERS.length).setNumberFormat('@');
+    sheet.setColumnWidth(1, 260);
+    sheet.setColumnWidths(2, 3, 160);
+    sheet.setColumnWidth(5, 300);
+  }
+  return sheet;
+}
+
+/** One row per email per source (survey / landing). Signing up twice from the same place just updates it. */
+function upsertWaitlist_(ss, b, when) {
+  var email = String(b.email || '').trim().toLowerCase();
+  var source = b.source === 'landing' ? 'landing' : 'survey';
+  if (!email) return;
+  var sheet = waitlistSheet_(ss);
+  var row = 0;
+  var last = sheet.getLastRow();
+  if (last > 1) {
+    var vals = sheet.getRange(2, 1, last - 1, 2).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]).toLowerCase() === email && vals[i][1] === source) { row = i + 2; break; }
+    }
+  }
+  var cells = [email, source, b.channel || '', formatTime_(when), b.session_id || ''].map(safe_);
+  if (!row) {
+    row = last + 1;
+  } else {
+    var old = sheet.getRange(row, 1, 1, cells.length).getValues()[0];
+    cells[2] = old[2] || cells[2]; // keep the first channel they came through
+    cells[3] = old[3] || cells[3]; // and when they first joined
+  }
+  ensureSize_(sheet, row, cells.length);
+  sheet.getRange(row, 1, 1, cells.length).setNumberFormat('@').setValues([cells]);
+}
+
+function waitlistRows_(ss) {
+  var sheet = ss.getSheetByName(TAB_WAITLIST);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, WAITLIST_HEADERS.length).getValues().map(function (r) {
+    return { email: r[0], source: r[1], channel: r[2], id: String(r[4] || '') };
+  }).filter(function (w) { return w.email; });
+}
+
+function excludedIds_(ss) {
+  var sheet = ss.getSheetByName(TAB_EXCLUDED);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_EXCLUDED);
+    sheet.getRange(1, 1, 1, 2).setValues([[ID_COL, 'Why (e.g. test, junk)']])
+      .setFontWeight('bold').setBackground('#123049').setFontColor('#F3ECDC');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 300);
+    sheet.setColumnWidth(2, 240);
+  }
+  var ids = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
+      var id = String(r[0] || '').trim();
+      if (id) ids[id] = true;
+    });
+  }
+  return ids;
+}
+
+/** Numbers the survey can't measure (from IR, returnees), typed by hand on the
+ *  "Typed numbers" tab so the Summary can show them without wiping them. */
+var TYPED_LABELS = ['Real cost of one semester', 'Applicants per seat', 'Returnees who agreed to share details'];
+function typedNumbers_(ss) {
+  var sheet = ss.getSheetByName(TAB_TYPED);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_TYPED);
+    var rows = [['What', 'Value (type here)', 'Where it came from']].concat(TYPED_LABELS.map(function (l) { return [l, '', '']; }));
+    sheet.getRange(1, 1, rows.length, 3).setValues(rows);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#123049').setFontColor('#F3ECDC');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 300);
+    sheet.setColumnWidths(2, 2, 220);
+  }
+  var out = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues().forEach(function (r) {
+      if (r[0]) out[String(r[0]).trim()] = r[1];
+    });
+  }
+  return out;
+}
+
 function ensureTabs_(ss) {
   // Older versions of this script wrote to "Responses" and "Sessions".
   var rename = function (from, to) {

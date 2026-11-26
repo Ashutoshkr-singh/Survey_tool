@@ -1,0 +1,1206 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Survey Install Steps</title><style>
+:root{--bg:#f6f3ec;--card:#fff;--ink:#1b2430;--muted:#5b6573;--line:#e3ddd0;--navy:#123049;--accent:#b8452f;--good:#2f7a4f;--code:#f0ece3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10161d;--card:#18212b;--ink:#e8e4da;--muted:#9aa4b1;--line:#2a3542;--navy:#9cc3e6;--accent:#e2836c;--good:#6cc191;--code:#0d1319}}
+:root[data-theme="dark"]{--bg:#10161d;--card:#18212b;--ink:#e8e4da;--muted:#9aa4b1;--line:#2a3542;--navy:#9cc3e6;--accent:#e2836c;--good:#6cc191;--code:#0d1319}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 80px}h1{font-size:28px;margin:0 0 6px;line-height:1.2}
+h2{font-size:21px;margin:40px 0 8px;padding-top:12px;border-top:2px solid var(--line)}
+.lede{color:var(--muted)}ol{padding-left:22px}li{margin:6px 0}code{background:var(--code);padding:1px 5px;border-radius:4px}
+.code{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0;background:var(--card)}
+.codehead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.codehead small{color:var(--muted)}
+button{font:inherit;font-weight:600;background:var(--navy);color:var(--bg);border:0;border-radius:8px;padding:6px 14px;cursor:pointer;white-space:nowrap}
+textarea{display:block;width:100%;height:180px;border:0;padding:10px 12px;background:var(--code);color:var(--ink);font:13px/1.45 ui-monospace,Consolas,monospace;resize:vertical}
+.ok{border-left:4px solid var(--good);background:var(--card);padding:8px 12px;border-radius:6px;margin:10px 0}
+.warn{border-left:4px solid var(--accent);background:var(--card);padding:8px 12px;border-radius:6px;margin:10px 0}
+.tree{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font:14px/1.6 ui-monospace,Consolas,monospace;white-space:pre;overflow-x:auto}
+</style></head><body><main>
+<h1>Install steps: 2 copy-pastes</h1>
+<p class="lede">Do part 1 (Supabase) and part 2 (Google Sheet). Each has one block of code: press <b>Copy all</b>, then paste where the steps say. Takes about 15 minutes.</p>
+
+<h2>Part 1 · Supabase: turn saving on (5 min)</h2>
+<div class="warn">Supabase is live but empty: <b>0 responses</b>. The survey saves through three functions that were never installed, so every Supabase save has failed. This block installs them. It does not delete anything.</div>
+<ol>
+<li>Go to <b>supabase.com</b>, sign in, open the project whose address starts <code>flrlczafuuufdvhebaph</code>.</li>
+<li>Left sidebar: <b>SQL Editor</b> (the <code>&gt;_</code> icon) → <b>New query</b>.</li>
+<li>Copy <b>Block 1</b> below and paste it into the empty box.</li>
+<li>Click <b>Run</b> (or Ctrl+Enter). If it warns about "destructive operations", click <b>Run this query</b>.</li>
+<li>You should see <b>Success. No rows returned</b>. That is correct.</li>
+</ol>
+<div class="code"><div class="codehead"><span><b>1</b> Paste into Supabase → SQL Editor <small>(326 lines)</small></span><button onclick="copyBlock('1',this)">Copy all</button></div><textarea id="1" readonly spellcheck="false">-- ============================================================================
+-- Exchange Reality Check: fix saving + readable views
+-- ============================================================================
+-- Run this ONCE, after 1-supabase-tables.sql, in Supabase: SQL Editor -&gt; New query -&gt;
+-- paste this whole file -&gt; Run. Safe to run again later; it only creates
+-- or replaces things, it never deletes data.
+--
+-- What it does:
+--   1. FIXES SAVING. The survey used to save with a direct &quot;upsert&quot;. An
+--      upsert has to look up the existing row first, and the public key has
+--      (deliberately) no permission to read rows, so Postgres rejected every
+--      single save with &quot;new row violates row-level security policy&quot;. The
+--      survey now calls the three functions below instead. They run with the
+--      database owner&#x27;s rights, do the upsert, and return nothing, so the
+--      public key still can&#x27;t read a single answer back.
+--   2. PLUGS A LEAK. question_stats was readable by anyone and grouped ALL
+--      answers, including names, emails and phone numbers. It now only
+--      covers the four multiple-choice questions the survey shows stats for.
+--   3. ADDS READABLE VIEWS for you, the owner (open them in Table Editor):
+--        responses_readable   one row per person, one column per question
+--        responses_by_day     how many started / finished each day
+--        answer_breakdown     for every multiple-choice question: each
+--                             answer, how many picked it, and the %
+--      None of these are readable with the public key.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Save functions (called by index.html via supabase.rpc)
+-- ---------------------------------------------------------------------------
+create or replace function public.save_session(
+  p_id uuid,
+  p_programme text default null,
+  p_year text default null,
+  p_department text default null,
+  p_is_pg boolean default null,
+  p_branch text default null,
+  p_user_agent text default null,
+  p_furthest_tier int default 0,
+  p_completed_at timestamptz default null
+) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into sessions (id, programme, year, department, is_pg, branch, user_agent, furthest_tier, completed_at)
+  values (p_id, left(p_programme, 200), left(p_year, 50), left(p_department, 200), p_is_pg,
+          left(p_branch, 5), left(p_user_agent, 500), coalesce(p_furthest_tier, 0), p_completed_at)
+  on conflict (id) do update set
+    programme     = coalesce(excluded.programme, sessions.programme),
+    year          = coalesce(excluded.year, sessions.year),
+    department    = coalesce(excluded.department, sessions.department),
+    is_pg         = coalesce(excluded.is_pg, sessions.is_pg),
+    branch        = coalesce(excluded.branch, sessions.branch),
+    user_agent    = coalesce(excluded.user_agent, sessions.user_agent),
+    furthest_tier = greatest(sessions.furthest_tier, excluded.furthest_tier),
+    completed_at  = coalesce(sessions.completed_at, excluded.completed_at),
+    updated_at    = now();
+end;
+$$;
+
+create or replace function public.save_answer(
+  p_session_id uuid,
+  p_question_id text,
+  p_value jsonb
+) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  -- The first answer (the name) can arrive before the session row does.
+  insert into sessions (id) values (p_session_id) on conflict (id) do nothing;
+  insert into answers (session_id, question_id, value)
+  values (p_session_id, left(p_question_id, 100), coalesce(p_value, &#x27;null&#x27;::jsonb))
+  on conflict (session_id, question_id) do update set value = excluded.value;
+end;
+$$;
+
+create or replace function public.save_contact(
+  p_session_id uuid,
+  p_email text default null,
+  p_phone_whatsapp text default null,
+  p_ok_followup_contact boolean default false,
+  p_ok_junior_contact boolean default false,
+  p_ok_interview_contact boolean default false
+) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into sessions (id) values (p_session_id) on conflict (id) do nothing;
+  insert into contacts (session_id, email, phone_whatsapp, ok_followup_contact, ok_junior_contact, ok_interview_contact)
+  values (p_session_id, left(p_email, 320), left(p_phone_whatsapp, 100),
+          p_ok_followup_contact, p_ok_junior_contact, p_ok_interview_contact)
+  on conflict (session_id) do update set
+    email                = excluded.email,
+    phone_whatsapp       = excluded.phone_whatsapp,
+    ok_followup_contact  = excluded.ok_followup_contact,
+    ok_junior_contact    = excluded.ok_junior_contact,
+    ok_interview_contact = excluded.ok_interview_contact;
+end;
+$$;
+
+grant execute on function public.save_session(uuid, text, text, text, boolean, text, text, int, timestamptz) to anon;
+grant execute on function public.save_answer(uuid, text, jsonb) to anon;
+grant execute on function public.save_contact(uuid, text, text, boolean, boolean, boolean) to anon;
+
+-- ---------------------------------------------------------------------------
+-- 2. Public stats: only the four questions the survey actually shows stats
+--    for. Nothing personal (names, emails, phones, free text) is exposed.
+-- ---------------------------------------------------------------------------
+create or replace view question_stats as
+select question_id, value, count(*) as n
+from answers
+where question_id in (&#x27;q8_awareness&#x27;, &#x27;q10_cost_guess&#x27;, &#x27;q14_cgpa_requirement&#x27;, &#x27;q16_credits_count&#x27;)
+group by question_id, value;
+
+grant select on question_stats to anon;
+
+-- ---------------------------------------------------------------------------
+-- 3. Readable views for the owner
+-- ---------------------------------------------------------------------------
+
+-- Turns a stored answer into plain text: lists become &quot;• a  • b&quot;, the cost
+-- guess becomes &quot;₹6,00,000&quot; or &quot;No idea&quot;.
+create or replace function public.answer_text(v jsonb) returns text
+language sql immutable as $$
+  select case jsonb_typeof(v)
+    when &#x27;string&#x27; then nullif(v #&gt;&gt; &#x27;{}&#x27;, &#x27;&#x27;)
+    when &#x27;number&#x27; then v #&gt;&gt; &#x27;{}&#x27;
+    when &#x27;boolean&#x27; then case when (v #&gt;&gt; &#x27;{}&#x27;)::boolean then &#x27;Yes&#x27; else &#x27;No&#x27; end
+    when &#x27;array&#x27; then (select string_agg(&#x27;• &#x27; || (e #&gt;&gt; &#x27;{}&#x27;), E&#x27;\n&#x27;) from jsonb_array_elements(v) e)
+    when &#x27;object&#x27; then
+      case
+        when (v -&gt;&gt; &#x27;no_idea&#x27;)::boolean then &#x27;No idea&#x27;
+        when jsonb_typeof(v -&gt; &#x27;value&#x27;) = &#x27;number&#x27; then &#x27;₹&#x27; || trim(to_char((v -&gt;&gt; &#x27;value&#x27;)::numeric, &#x27;99,99,99,999&#x27;))
+        else v::text
+      end
+    else null
+  end
+$$;
+
+create or replace view responses_readable with (security_invoker = true) as
+select
+  row_number() over (order by s.created_at) as &quot;#&quot;,
+  to_char(s.created_at at time zone &#x27;Asia/Kolkata&#x27;, &#x27;DD Mon YYYY, HH12:MI AM&#x27;) as &quot;Started (IST)&quot;,
+  to_char(s.updated_at at time zone &#x27;Asia/Kolkata&#x27;, &#x27;DD Mon YYYY, HH12:MI AM&#x27;) as &quot;Last activity (IST)&quot;,
+  case
+    when s.completed_at is not null then &#x27;Completed&#x27;
+    else &#x27;Stopped at: &#x27; || (array[&#x27;Getting started&#x27;, &#x27;What you know&#x27;, &#x27;Your story&#x27;, &#x27;Wrapping up&#x27;])[least(s.furthest_tier, 3) + 1]
+  end as &quot;Status&quot;,
+  case s.branch
+    when &#x27;A&#x27; then &#x27;Never applied&#x27;
+    when &#x27;B&#x27; then &#x27;Started, didn&#x27;&#x27;t finish&#x27;
+    when &#x27;C&#x27; then &#x27;Went / going&#x27;
+  end as &quot;Group&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;respondent_name&#x27;) as &quot;Name&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q8_awareness&#x27;) as &quot;Knew exchange was possible?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q10_cost_guess&#x27;) as &quot;Cost guess for 1 semester&quot;,
+  max(public.answer_text(a.value) || &#x27; / 5&#x27;) filter (where a.question_id = &#x27;q12_confidence&#x27;) as &quot;Confidence in that guess&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q11_cost_reasoning&#x27;) as &quot;How they got that number&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q2_programme&#x27;) as &quot;Programme&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q3_year&#x27;) as &quot;Year&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q4_department&#x27;) as &quot;Department&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q5_gender&#x27;) as &quot;Gender&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q7_family_situation&#x27;) as &quot;Family could manage a big expense?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q2pg_availability&#x27;) as &quot;[PG] Is exchange open to PG students?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q2pg_detail&#x27;) as &quot;[PG] What they know about the PG route&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q9_name_university&#x27;) as &quot;A partner university they can name&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q13_who_handles&#x27;) as &quot;Who handles exchange at IITR?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q14_cgpa_requirement&#x27;) as &quot;Is there a minimum CGPA?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q14_detail&#x27;) as &quot;CGPA cutoff they think&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q15_application_window&#x27;) as &quot;When applications open&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q16_credits_count&#x27;) as &quot;Do credits count at IITR?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q18_category&#x27;) as &quot;Their situation&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q19_unlikely_reason&#x27;) as &quot;What makes it feel unlikely&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q20_describe_exchange_student&#x27;) as &quot;What exchange students are like&quot;,
+  max(public.answer_text(a.value) || &#x27; / 5&#x27;) filter (where a.question_id = &#x27;q21_sounds_like_you&#x27;) as &quot;Does that sound like them?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q22_barriers&#x27;) as &quot;What held them back&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q22_barriers_other_text&#x27;) as &quot;Held back by (other)&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q23_biggest_barrier&#x27;) as &quot;Biggest barrier&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q24_if_removed&#x27;) as &quot;Would apply if that was gone?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q24_detail_probably&#x27;) as &quot;What else would be in the way&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q24_detail_no&#x27;) as &quot;Why they still wouldn’t&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q25_suggested_by_someone&#x27;) as &quot;Has anyone suggested they apply?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q26_how_far&#x27;) as &quot;How far they got&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q27_moment_stopped&#x27;) as &quot;The moment they stopped&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q28_decision_or_fade&#x27;) as &quot;Decision, or did it fade?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q29_biggest_blocker&#x27;) as &quot;Biggest blocker&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q29_detail_other&#x27;) as &quot;Blocker (other)&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q30_hard_wall&#x27;) as &quot;Hard wall, or fixable?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q31_info_search&#x27;) as &quot;What happened when they looked for info&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q32_wrong_belief&#x27;) as &quot;Something they believed that was wrong&quot;,
+  max(public.answer_text(a.value) || &#x27; / 5&#x27;) filter (where a.question_id = &#x27;q33_would_have_gone&#x27;) as &quot;Would have gone if clearer?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q34_willing_to_talk&#x27;) as &quot;Up for a 20-min call?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q34_contact&#x27;) as &quot;Phone for the call&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q35_university_country_term&#x27;) as &quot;Where and when they went&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q36_total_cost&#x27;) as &quot;Actual total cost&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q37_cost_breakdown&#x27;) as &quot;Cost breakdown&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q38_blindsided_cost&#x27;) as &quot;Cost that surprised them&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q39_funding&#x27;) as &quot;How they paid for it&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q39_funding_other_text&#x27;) as &quot;Paid for it with (other)&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q40_mapping_experience&#x27;) as &quot;How credit mapping went&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q41_mapping_story&#x27;) as &quot;Credit mapping story&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q42_wish_known&#x27;) as &quot;Wish they had known&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q43_how_found_out&#x27;) as &quot;How they found out exchange exists&quot;,
+  max(public.answer_text(a.value) || &#x27; / 5&#x27;) filter (where a.question_id = &#x27;q44_would_redo&#x27;) as &quot;Would do it again?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q45_junior_contact&#x27;) as &quot;Juniors can contact them?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q45_contact_detail&#x27;) as &quot;Contact for juniors&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q46_conversation_at_home&#x27;) as &quot;Conversation with family&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q47_how_find_opportunities&#x27;) as &quot;How they hear about opportunities&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q48_missed_too_late&#x27;) as &quot;Missed something by finding out late&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q49_apply_if&#x27;) as &quot;“I’d apply if…”&quot;,
+  max(public.answer_text(a.value) || &#x27; / 5&#x27;) filter (where a.question_id = &#x27;q50_single_page_usefulness&#x27;) as &quot;Would use a one-page guide?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q51_anything_else&#x27;) as &quot;Anything else&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q52_contact_ok&#x27;) as &quot;OK to follow up?&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;q52_contact_detail&#x27;) as &quot;Phone for follow-up&quot;,
+  max(public.answer_text(a.value)) filter (where a.question_id = &#x27;email_signup&#x27;) as &quot;Email&quot;
+
+from sessions s
+left join answers a on a.session_id = s.id
+group by s.id
+order by s.created_at desc;
+
+create or replace view responses_by_day with (security_invoker = true) as
+select
+  (s.created_at at time zone &#x27;Asia/Kolkata&#x27;)::date as &quot;Day&quot;,
+  count(*) as &quot;Started&quot;,
+  count(*) filter (where s.completed_at is not null) as &quot;Completed&quot;,
+  sum(count(*)) over (order by (s.created_at at time zone &#x27;Asia/Kolkata&#x27;)::date) as &quot;Started (running total)&quot;
+from sessions s
+group by 1
+order by 1 desc;
+
+-- Plain-English name for every question id, in survey order.
+create or replace view question_labels with (security_invoker = true) as
+select * from (values
+    (&#x27;respondent_name&#x27;, &#x27;Name&#x27;, 0),
+    (&#x27;q8_awareness&#x27;, &#x27;Knew exchange was possible?&#x27;, 1),
+    (&#x27;q10_cost_guess&#x27;, &#x27;Cost guess for 1 semester&#x27;, 2),
+    (&#x27;q12_confidence&#x27;, &#x27;Confidence in that guess&#x27;, 3),
+    (&#x27;q11_cost_reasoning&#x27;, &#x27;How they got that number&#x27;, 4),
+    (&#x27;q2_programme&#x27;, &#x27;Programme&#x27;, 5),
+    (&#x27;q3_year&#x27;, &#x27;Year&#x27;, 6),
+    (&#x27;q4_department&#x27;, &#x27;Department&#x27;, 7),
+    (&#x27;q5_gender&#x27;, &#x27;Gender&#x27;, 8),
+    (&#x27;q7_family_situation&#x27;, &#x27;Family could manage a big expense?&#x27;, 9),
+    (&#x27;q2pg_availability&#x27;, &#x27;[PG] Is exchange open to PG students?&#x27;, 10),
+    (&#x27;q2pg_detail&#x27;, &#x27;[PG] What they know about the PG route&#x27;, 11),
+    (&#x27;q9_name_university&#x27;, &#x27;A partner university they can name&#x27;, 12),
+    (&#x27;q13_who_handles&#x27;, &#x27;Who handles exchange at IITR?&#x27;, 13),
+    (&#x27;q14_cgpa_requirement&#x27;, &#x27;Is there a minimum CGPA?&#x27;, 14),
+    (&#x27;q14_detail&#x27;, &#x27;CGPA cutoff they think&#x27;, 15),
+    (&#x27;q15_application_window&#x27;, &#x27;When applications open&#x27;, 16),
+    (&#x27;q16_credits_count&#x27;, &#x27;Do credits count at IITR?&#x27;, 17),
+    (&#x27;q18_category&#x27;, &#x27;Their situation&#x27;, 18),
+    (&#x27;q19_unlikely_reason&#x27;, &#x27;What makes it feel unlikely&#x27;, 19),
+    (&#x27;q20_describe_exchange_student&#x27;, &#x27;What exchange students are like&#x27;, 20),
+    (&#x27;q21_sounds_like_you&#x27;, &#x27;Does that sound like them?&#x27;, 21),
+    (&#x27;q22_barriers&#x27;, &#x27;What held them back&#x27;, 22),
+    (&#x27;q22_barriers_other_text&#x27;, &#x27;Held back by (other)&#x27;, 23),
+    (&#x27;q23_biggest_barrier&#x27;, &#x27;Biggest barrier&#x27;, 24),
+    (&#x27;q24_if_removed&#x27;, &#x27;Would apply if that was gone?&#x27;, 25),
+    (&#x27;q24_detail_probably&#x27;, &#x27;What else would be in the way&#x27;, 26),
+    (&#x27;q24_detail_no&#x27;, &#x27;Why they still wouldn’t&#x27;, 27),
+    (&#x27;q25_suggested_by_someone&#x27;, &#x27;Has anyone suggested they apply?&#x27;, 28),
+    (&#x27;q26_how_far&#x27;, &#x27;How far they got&#x27;, 29),
+    (&#x27;q27_moment_stopped&#x27;, &#x27;The moment they stopped&#x27;, 30),
+    (&#x27;q28_decision_or_fade&#x27;, &#x27;Decision, or did it fade?&#x27;, 31),
+    (&#x27;q29_biggest_blocker&#x27;, &#x27;Biggest blocker&#x27;, 32),
+    (&#x27;q29_detail_other&#x27;, &#x27;Blocker (other)&#x27;, 33),
+    (&#x27;q30_hard_wall&#x27;, &#x27;Hard wall, or fixable?&#x27;, 34),
+    (&#x27;q31_info_search&#x27;, &#x27;What happened when they looked for info&#x27;, 35),
+    (&#x27;q32_wrong_belief&#x27;, &#x27;Something they believed that was wrong&#x27;, 36),
+    (&#x27;q33_would_have_gone&#x27;, &#x27;Would have gone if clearer?&#x27;, 37),
+    (&#x27;q34_willing_to_talk&#x27;, &#x27;Up for a 20-min call?&#x27;, 38),
+    (&#x27;q34_contact&#x27;, &#x27;Phone for the call&#x27;, 39),
+    (&#x27;q35_university_country_term&#x27;, &#x27;Where and when they went&#x27;, 40),
+    (&#x27;q36_total_cost&#x27;, &#x27;Actual total cost&#x27;, 41),
+    (&#x27;q37_cost_breakdown&#x27;, &#x27;Cost breakdown&#x27;, 42),
+    (&#x27;q38_blindsided_cost&#x27;, &#x27;Cost that surprised them&#x27;, 43),
+    (&#x27;q39_funding&#x27;, &#x27;How they paid for it&#x27;, 44),
+    (&#x27;q39_funding_other_text&#x27;, &#x27;Paid for it with (other)&#x27;, 45),
+    (&#x27;q40_mapping_experience&#x27;, &#x27;How credit mapping went&#x27;, 46),
+    (&#x27;q41_mapping_story&#x27;, &#x27;Credit mapping story&#x27;, 47),
+    (&#x27;q42_wish_known&#x27;, &#x27;Wish they had known&#x27;, 48),
+    (&#x27;q43_how_found_out&#x27;, &#x27;How they found out exchange exists&#x27;, 49),
+    (&#x27;q44_would_redo&#x27;, &#x27;Would do it again?&#x27;, 50),
+    (&#x27;q45_junior_contact&#x27;, &#x27;Juniors can contact them?&#x27;, 51),
+    (&#x27;q45_contact_detail&#x27;, &#x27;Contact for juniors&#x27;, 52),
+    (&#x27;q46_conversation_at_home&#x27;, &#x27;Conversation with family&#x27;, 53),
+    (&#x27;q47_how_find_opportunities&#x27;, &#x27;How they hear about opportunities&#x27;, 54),
+    (&#x27;q48_missed_too_late&#x27;, &#x27;Missed something by finding out late&#x27;, 55),
+    (&#x27;q49_apply_if&#x27;, &#x27;“I’d apply if…”&#x27;, 56),
+    (&#x27;q50_single_page_usefulness&#x27;, &#x27;Would use a one-page guide?&#x27;, 57),
+    (&#x27;q51_anything_else&#x27;, &#x27;Anything else&#x27;, 58),
+    (&#x27;q52_contact_ok&#x27;, &#x27;OK to follow up?&#x27;, 59),
+    (&#x27;q52_contact_detail&#x27;, &#x27;Phone for follow-up&#x27;, 60),
+    (&#x27;email_signup&#x27;, &#x27;Email&#x27;, 61)
+) as t(question_id, question, position);
+
+-- Every multiple-choice style answer, counted. Lists are split so each
+-- ticked option counts once; % is out of the people who answered that
+-- question (so tick-all-that-apply questions can add up past 100%).
+create or replace view answer_breakdown with (security_invoker = true) as
+with picks as (
+  select a.question_id,
+         case when jsonb_typeof(a.value) = &#x27;array&#x27; then e.value #&gt;&gt; &#x27;{}&#x27; else public.answer_text(a.value) end as answer
+  from answers a
+  left join lateral jsonb_array_elements(case when jsonb_typeof(a.value) = &#x27;array&#x27; then a.value else &#x27;[]&#x27;::jsonb end) e on true
+  where a.question_id in (
+    &#x27;q8_awareness&#x27;, &#x27;q12_confidence&#x27;, &#x27;q2_programme&#x27;, &#x27;q3_year&#x27;, &#x27;q5_gender&#x27;, &#x27;q7_family_situation&#x27;,
+    &#x27;q2pg_availability&#x27;, &#x27;q14_cgpa_requirement&#x27;, &#x27;q15_application_window&#x27;, &#x27;q16_credits_count&#x27;, &#x27;q18_category&#x27;,
+    &#x27;q21_sounds_like_you&#x27;, &#x27;q22_barriers&#x27;, &#x27;q23_biggest_barrier&#x27;, &#x27;q24_if_removed&#x27;, &#x27;q25_suggested_by_someone&#x27;,
+    &#x27;q26_how_far&#x27;, &#x27;q28_decision_or_fade&#x27;, &#x27;q29_biggest_blocker&#x27;, &#x27;q30_hard_wall&#x27;, &#x27;q31_info_search&#x27;,
+    &#x27;q33_would_have_gone&#x27;, &#x27;q34_willing_to_talk&#x27;, &#x27;q39_funding&#x27;, &#x27;q40_mapping_experience&#x27;, &#x27;q44_would_redo&#x27;,
+    &#x27;q45_junior_contact&#x27;, &#x27;q47_how_find_opportunities&#x27;, &#x27;q50_single_page_usefulness&#x27;, &#x27;q52_contact_ok&#x27;
+  )
+)
+select
+  coalesce(l.question, p.question_id) as &quot;Question&quot;,
+  coalesce(p.answer, &#x27;(skipped)&#x27;) as &quot;Answer&quot;,
+  count(*) as &quot;People&quot;,
+  round(100.0 * count(*) / max(t.answered), 1) as &quot;% of people who answered&quot;
+from picks p
+join (select question_id, count(*) as answered from answers group by question_id) t on t.question_id = p.question_id
+left join question_labels l on l.question_id = p.question_id
+group by p.question_id, l.question, l.position, p.answer
+order by l.position, count(*) desc;
+
+-- Owner-only: the public key must never be able to read these.
+revoke all on responses_readable, responses_by_day, answer_breakdown, question_labels from anon, authenticated;
+</textarea></div>
+<p>Then a second new query with <b>Block 1b</b> (the launch waitlist), Run again.</p>
+<div class="code"><div class="codehead"><span><b>1b</b> Paste into Supabase → SQL Editor (waitlist) <small>(62 lines)</small></span><button onclick="copyBlock('1b',this)">Copy all</button></div><textarea id="1b" readonly spellcheck="false">-- ============================================================================
+-- Exchange Reality Check: launch waitlist (&quot;pre-booking&quot;)
+-- ============================================================================
+-- Run once in Supabase: SQL Editor -&gt; New query -&gt; paste -&gt; Run. Safe to run
+-- again: it only creates things that don&#x27;t exist yet or replaces functions.
+--
+-- One table, two ways in, kept apart by `source`:
+--   source = &#x27;survey&#x27;   someone finished the survey and ticked &quot;tell me when
+--                       it launches&quot;. Already interested, so this count
+--                       overstates demand.
+--   source = &#x27;landing&#x27;  someone signed up on the standalone page (join.html).
+--                       The honest demand signal.
+-- `channel` is the ?from=... tag on the link they used (e.g. hostel-rjb).
+-- ============================================================================
+
+create table if not exists waitlist (
+  id          uuid primary key default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  email       text not null,
+  source      text not null check (source in (&#x27;survey&#x27;, &#x27;landing&#x27;)),
+  channel     text,
+  session_id  uuid references sessions(id) on delete set null,
+  unique (email, source)
+);
+create index if not exists idx_waitlist_source on waitlist (source);
+
+-- Locked down: no policies, so the public key can neither read nor write the
+-- table directly. It can only call join_waitlist() below.
+alter table waitlist enable row level security;
+
+create or replace function public.join_waitlist(
+  p_email text,
+  p_source text,
+  p_channel text default null,
+  p_session_id uuid default null
+) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if p_email is null or trim(p_email) !~ &#x27;^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$&#x27; then
+    raise exception &#x27;invalid email&#x27;;
+  end if;
+  if p_source not in (&#x27;survey&#x27;, &#x27;landing&#x27;) then
+    raise exception &#x27;invalid source&#x27;;
+  end if;
+  if p_session_id is not null then
+    insert into sessions (id) values (p_session_id) on conflict (id) do nothing;
+  end if;
+  insert into waitlist (email, source, channel, session_id)
+  values (lower(trim(left(p_email, 320))), p_source, left(p_channel, 60), p_session_id)
+  on conflict (email, source) do update set
+    channel    = coalesce(waitlist.channel, excluded.channel),
+    session_id = coalesce(waitlist.session_id, excluded.session_id);
+end;
+$$;
+
+grant execute on function public.join_waitlist(text, text, text, uuid) to anon;
+
+-- Counts only (no emails), so join.html can show &quot;N people are waiting&quot;.
+create or replace view waitlist_counts as
+select source, count(*)::int as n from waitlist group by source;
+grant select on waitlist_counts to anon;
+</textarea></div>
+
+<h2>Part 2 · Google Sheet: readable layout (10 min)</h2>
+<ol>
+<li>Open your responses Google Sheet → top menu <b>Extensions → Apps Script</b>.</li>
+<li>Click inside the code, press <b>Ctrl+A</b>, then <b>Delete</b>, so the editor is empty.</li>
+<li>Copy <b>Block 2</b> below, paste it in, and press <b>Ctrl+S</b> to save.</li>
+<li>Top right: <b>Deploy → Manage deployments</b> → click the <b>pencil</b> (Edit) → Version: <b>New version</b> → <b>Deploy</b>.</li>
+</ol>
+<div class="warn">Do <b>not</b> click "New deployment". It creates a new web address, and the survey would keep sending answers to the old one.</div>
+<ol start="5">
+<li>If Google asks to authorise: <b>Review permissions</b> → your account → <b>Advanced</b> → <b>Go to (project name)</b> → <b>Allow</b>. It's your own script editing your own Sheet.</li>
+<li>Go back to the Sheet tab and <b>reload</b> the page. After a few seconds a <b>Survey</b> menu appears next to Help.</li>
+<li>Click <b>Survey → Rebuild "All responses" from raw data</b>. Authorise again if asked, then run it once more. A popup says <i>"Rebuilt 4 responses."</i></li>
+<li>Open the <b>All responses</b> tab. Find the test row (Department is <code>sfsd</code>), scroll to its last column <b>Response ID</b>, and copy that ID.</li>
+<li>Open the <b>Excluded</b> tab and paste the ID in column A, row 2. Type <code>test</code> in column B.</li>
+<li>Click <b>Survey → Refresh summary</b>. The <b>Summary</b> tab now counts 3 people.</li>
+<li><b>Share</b> (top right) → General access → <b>Restricted</b>. Add your teammate by email. The Sheet holds emails, so it shouldn't be open to anyone with the link.</li>
+</ol>
+<div class="code"><div class="codehead"><span><b>2</b> Paste into Google Sheet → Extensions → Apps Script <small>(739 lines)</small></span><button onclick="copyBlock('2',this)">Copy all</button></div><textarea id="2" readonly spellcheck="false">/**
+ * ============================================================================
+ * Exchange Reality Check: Google Sheets sync
+ * ============================================================================
+ * Lives inside the Google Sheet (Extensions -&gt; Apps Script), not in this
+ * repo&#x27;s website. See docs/RESULTS-GUIDE.md for step-by-step setup.
+ *
+ * What you see in the Sheet:
+ *   All responses   ONE ROW PER PERSON. Columns are the questions, in survey
+ *                   order, with plain-English headings. Updates live as
+ *                   people answer, so half-finished responses show too.
+ *   Summary         Totals, responses per day (with a chart) and, for every
+ *                   multiple-choice question, how many people picked what.
+ *                   Refreshes itself when someone finishes, or use the
+ *                   &quot;Survey&quot; menu -&gt; &quot;Refresh summary&quot;.
+ *   Contacts        Emails / phone numbers from people who agreed to it.
+ *   Raw answers,    The original one-line-per-answer log, kept as a backup.
+ *   Raw sessions    You don&#x27;t need to read these. &quot;All responses&quot; can be
+ *                   rebuilt from them at any time (Survey menu).
+ *
+ * After pasting a new version of this file you must REDEPLOY or the old
+ * code keeps running: Deploy -&gt; Manage deployments -&gt; pencil icon -&gt;
+ * Version: &quot;New version&quot; -&gt; Deploy. (Do NOT use &quot;New deployment&quot;: that
+ * creates a new URL, and the survey would keep posting to the old one.)
+ * ============================================================================
+ */
+
+var TAB_READABLE = &#x27;All responses&#x27;;
+var TAB_SUMMARY = &#x27;Summary&#x27;;
+var TAB_RAW_ANSWERS = &#x27;Raw answers&#x27;;
+var TAB_RAW_SESSIONS = &#x27;Raw sessions&#x27;;
+var TAB_CONTACTS = &#x27;Contacts&#x27;;
+var TAB_EXCLUDED = &#x27;Excluded&#x27;;
+var TAB_TYPED = &#x27;Typed numbers&#x27;;
+var TAB_WAITLIST = &#x27;Waitlist&#x27;;
+var WAITLIST_HEADERS = [&#x27;Email&#x27;, &#x27;Source&#x27;, &#x27;Channel (link tag)&#x27;, &#x27;Joined (IST)&#x27;, &#x27;Response ID&#x27;];
+var TZ = &#x27;Asia/Kolkata&#x27;;
+
+// [question id, column heading, section]. Order = column order.
+var QUESTIONS = [
+  [&quot;respondent_name&quot;, &quot;Name&quot;, 0],
+  [&quot;from_channel&quot;, &quot;Came from (link tag)&quot;, 0],
+  [&quot;q8_awareness&quot;, &quot;Knew exchange was possible?&quot;, 0],
+  [&quot;q10_cost_guess&quot;, &quot;Cost guess for 1 semester&quot;, 0],
+  [&quot;q12_confidence&quot;, &quot;Confidence in that guess&quot;, 0],
+  [&quot;q11_cost_reasoning&quot;, &quot;How they got that number&quot;, 0],
+  [&quot;q2_programme&quot;, &quot;Programme&quot;, 0],
+  [&quot;q3_year&quot;, &quot;Year&quot;, 0],
+  [&quot;q4_department&quot;, &quot;Department&quot;, 0],
+  [&quot;q5_gender&quot;, &quot;Gender&quot;, 0],
+  [&quot;q7_family_situation&quot;, &quot;Family could manage a big expense?&quot;, 0],
+  [&quot;q2pg_availability&quot;, &quot;[PG] Is exchange open to PG students?&quot;, 1],
+  [&quot;q2pg_detail&quot;, &quot;[PG] What they know about the PG route&quot;, 1],
+  [&quot;q9_name_university&quot;, &quot;A partner university they can name&quot;, 1],
+  [&quot;q13_who_handles&quot;, &quot;Who handles exchange at IITR?&quot;, 1],
+  [&quot;q17_where_look&quot;, &quot;Where they look for exchange info&quot;, 1],
+  [&quot;q17_where_look_other_text&quot;, &quot;Where they look (other)&quot;, 1],
+  [&quot;q14_cgpa_requirement&quot;, &quot;Is there a minimum CGPA?&quot;, 1],
+  [&quot;q14_detail&quot;, &quot;CGPA cutoff they think&quot;, 1],
+  [&quot;q15_application_window&quot;, &quot;When applications open&quot;, 1],
+  [&quot;q16_credits_count&quot;, &quot;Do credits count at IITR?&quot;, 1],
+  [&quot;q18_category&quot;, &quot;Their situation&quot;, 1],
+  [&quot;q19_unlikely_reason&quot;, &quot;What makes it feel unlikely&quot;, 2],
+  [&quot;q20_describe_exchange_student&quot;, &quot;What exchange students are like&quot;, 2],
+  [&quot;q21_sounds_like_you&quot;, &quot;Does that sound like them?&quot;, 2],
+  [&quot;q22_barriers&quot;, &quot;What held them back&quot;, 2],
+  [&quot;q22_barriers_other_text&quot;, &quot;Held back by (other)&quot;, 2],
+  [&quot;q23_biggest_barrier&quot;, &quot;Biggest barrier&quot;, 2],
+  [&quot;q24_if_removed&quot;, &quot;Would apply if that was gone?&quot;, 2],
+  [&quot;q24_detail_probably&quot;, &quot;What else would be in the way&quot;, 2],
+  [&quot;q24_detail_no&quot;, &quot;Why they still wouldn’t&quot;, 2],
+  [&quot;q25_suggested_by_someone&quot;, &quot;Has anyone suggested they apply?&quot;, 2],
+  [&quot;q26_how_far&quot;, &quot;How far they got&quot;, 2],
+  [&quot;q27_moment_stopped&quot;, &quot;The moment they stopped&quot;, 2],
+  [&quot;q28_decision_or_fade&quot;, &quot;Decision, or did it fade?&quot;, 2],
+  [&quot;q29_biggest_blocker&quot;, &quot;Biggest blocker&quot;, 2],
+  [&quot;q29_detail_other&quot;, &quot;Blocker (other)&quot;, 2],
+  [&quot;q30_hard_wall&quot;, &quot;Hard wall, or fixable?&quot;, 2],
+  [&quot;q31_info_search&quot;, &quot;What happened when they looked for info&quot;, 2],
+  [&quot;q32_wrong_belief&quot;, &quot;Something they believed that was wrong&quot;, 2],
+  [&quot;q33_would_have_gone&quot;, &quot;Would have gone if clearer?&quot;, 2],
+  [&quot;q34_willing_to_talk&quot;, &quot;Up for a 20-min call?&quot;, 2],
+  [&quot;q34_contact&quot;, &quot;Phone for the call&quot;, 2],
+  [&quot;q35_university_country_term&quot;, &quot;Where and when they went&quot;, 2],
+  [&quot;q36_total_cost&quot;, &quot;Actual total cost&quot;, 2],
+  [&quot;q37_cost_breakdown&quot;, &quot;Cost breakdown&quot;, 2],
+  [&quot;q38_blindsided_cost&quot;, &quot;Cost that surprised them&quot;, 2],
+  [&quot;q39_funding&quot;, &quot;How they paid for it&quot;, 2],
+  [&quot;q39_funding_other_text&quot;, &quot;Paid for it with (other)&quot;, 2],
+  [&quot;q40_mapping_experience&quot;, &quot;How credit mapping went&quot;, 2],
+  [&quot;q41_mapping_story&quot;, &quot;Credit mapping story&quot;, 2],
+  [&quot;q42_wish_known&quot;, &quot;Wish they had known&quot;, 2],
+  [&quot;q43_how_found_out&quot;, &quot;How they found out exchange exists&quot;, 2],
+  [&quot;q44_would_redo&quot;, &quot;Would do it again?&quot;, 2],
+  [&quot;q45_junior_contact&quot;, &quot;Juniors can contact them?&quot;, 2],
+  [&quot;q45_contact_detail&quot;, &quot;Contact for juniors&quot;, 2],
+  [&quot;q46_conversation_at_home&quot;, &quot;Conversation with family&quot;, 3],
+  [&quot;q47_how_find_opportunities&quot;, &quot;How they hear about opportunities&quot;, 3],
+  [&quot;q48_missed_too_late&quot;, &quot;Missed something by finding out late&quot;, 3],
+  [&quot;q49_apply_if&quot;, &quot;“I’d apply if…”&quot;, 3],
+  [&quot;q50_single_page_usefulness&quot;, &quot;Would use a one-page guide?&quot;, 3],
+  [&quot;q51_anything_else&quot;, &quot;Anything else&quot;, 3],
+  [&quot;q52_contact_ok&quot;, &quot;OK to follow up?&quot;, 3],
+  [&quot;q52_contact_detail&quot;, &quot;Phone for follow-up&quot;, 3],
+  [&quot;pitch_launch_notify&quot;, &quot;Wants launch notification?&quot;, 3],
+  [&quot;email_signup&quot;, &quot;Email&quot;, 3]
+];
+var SECTIONS = [&#x27;Getting started&#x27;, &#x27;What you know&#x27;, &#x27;Your story&#x27;, &#x27;Wrapping up&#x27;];
+var SCALES = [&#x27;q12_confidence&#x27;, &#x27;q21_sounds_like_you&#x27;, &#x27;q33_would_have_gone&#x27;, &#x27;q44_would_redo&#x27;, &#x27;q50_single_page_usefulness&#x27;];
+var GROUPS = { A: &#x27;Never applied&#x27;, B: &quot;Started, didn&#x27;t finish&quot;, C: &#x27;Went / going&#x27; };
+
+// Questions counted in the Summary tab (multiple choice and 1-5 scales).
+var BREAKDOWN = [
+  &#x27;from_channel&#x27;, &#x27;q8_awareness&#x27;, &#x27;q12_confidence&#x27;, &#x27;q2_programme&#x27;, &#x27;q3_year&#x27;, &#x27;q5_gender&#x27;, &#x27;q7_family_situation&#x27;,
+  &#x27;q2pg_availability&#x27;, &#x27;q17_where_look&#x27;, &#x27;q14_cgpa_requirement&#x27;, &#x27;q15_application_window&#x27;, &#x27;q16_credits_count&#x27;, &#x27;q18_category&#x27;,
+  &#x27;q21_sounds_like_you&#x27;, &#x27;q22_barriers&#x27;, &#x27;q23_biggest_barrier&#x27;, &#x27;q24_if_removed&#x27;, &#x27;q25_suggested_by_someone&#x27;,
+  &#x27;q26_how_far&#x27;, &#x27;q28_decision_or_fade&#x27;, &#x27;q29_biggest_blocker&#x27;, &#x27;q30_hard_wall&#x27;, &#x27;q31_info_search&#x27;,
+  &#x27;q33_would_have_gone&#x27;, &#x27;q34_willing_to_talk&#x27;, &#x27;q39_funding&#x27;, &#x27;q40_mapping_experience&#x27;, &#x27;q44_would_redo&#x27;,
+  &#x27;q45_junior_contact&#x27;, &#x27;q47_how_find_opportunities&#x27;, &#x27;q50_single_page_usefulness&#x27;, &#x27;pitch_launch_notify&#x27;, &#x27;q52_contact_ok&#x27;
+];
+
+var FIXED_COLS = [&#x27;#&#x27;, &#x27;Name&#x27;, &#x27;Started (IST)&#x27;, &#x27;Last activity (IST)&#x27;, &#x27;Status&#x27;, &#x27;Group&#x27;];
+var ID_COL = &#x27;Response ID&#x27;;
+
+/* ===========================================================================
+   Web endpoint (the survey POSTs here)
+   ========================================================================= */
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    var body = JSON.parse(e.postData.contents);
+    lock.waitLock(20000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    ensureTabs_(ss);
+    var when = body.created_at || new Date().toISOString();
+
+    if (body.kind === &#x27;answer&#x27;) {
+      appendRaw_(ss, TAB_RAW_ANSWERS, [&#x27;session_id&#x27;, &#x27;question_id&#x27;, &#x27;value&#x27;, &#x27;created_at&#x27;],
+        [body.session_id, body.question_id, typeof body.value === &#x27;string&#x27; ? body.value : JSON.stringify(body.value), when]);
+      upsertPerson_(ss, body.session_id, when, function (set) { applyAnswer_(set, body.question_id, body.value); });
+
+    } else if (body.kind === &#x27;session&#x27;) {
+      appendRaw_(ss, TAB_RAW_SESSIONS,
+        [&#x27;session_id&#x27;, &#x27;created_at&#x27;, &#x27;programme&#x27;, &#x27;year&#x27;, &#x27;department&#x27;, &#x27;is_pg&#x27;, &#x27;branch&#x27;, &#x27;user_agent&#x27;, &#x27;furthest_tier&#x27;, &#x27;completed_at&#x27;],
+        [body.session_id, when, body.programme || &#x27;&#x27;, body.year || &#x27;&#x27;, body.department || &#x27;&#x27;, !!body.is_pg,
+         body.branch || &#x27;&#x27;, body.user_agent || &#x27;&#x27;, body.furthest_tier || 0, body.completed_at || &#x27;&#x27;]);
+      upsertPerson_(ss, body.session_id, when, function (set) { applySession_(set, body); });
+      if (body.completed_at) maybeRefreshSummary_();
+
+    } else if (body.kind === &#x27;contact&#x27;) {
+      upsertContact_(ss, body, when);
+
+    } else if (body.kind === &#x27;waitlist&#x27;) {
+      upsertWaitlist_(ss, body, when);
+
+    } else {
+      return json_({ ok: false, error: &#x27;unknown kind: &#x27; + body.kind });
+    }
+    return json_({ ok: true });
+
+  } catch (err) {
+    // Logged so problems show in Apps Script -&gt; Executions.
+    Logger.log(&#x27;sync error: &#x27; + err + &#x27;\n&#x27; + (e &amp;&amp; e.postData &amp;&amp; e.postData.contents));
+    return json_({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Open the Web App URL in a browser to check the deployment is live. */
+function doGet() {
+  return json_({ ok: true, message: &#x27;Exchange Reality Check sync endpoint is live.&#x27; });
+}
+
+/* ===========================================================================
+   &quot;Survey&quot; menu inside the Sheet
+   ========================================================================= */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu(&#x27;Survey&#x27;)
+    .addItem(&#x27;Refresh summary&#x27;, &#x27;refreshSummary&#x27;)
+    .addItem(&#x27;Rebuild &quot;All responses&quot; from raw data&#x27;, &#x27;rebuildAllResponses&#x27;)
+    .addToUi();
+}
+
+/* ===========================================================================
+   All responses: one row per person
+   ========================================================================= */
+
+/** Finds (or creates) the person&#x27;s row, lets `fill` set cells, then writes them. */
+function upsertPerson_(ss, sessionId, when, fill) {
+  var sheet = readableSheet_(ss);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var idCol = headers.indexOf(ID_COL) + 1;
+  var row = findRow_(sheet, idCol, sessionId);
+  var current = {};
+  if (row) {
+    var vals = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+    headers.forEach(function (h, i) { current[h] = vals[i]; });
+  } else {
+    row = sheet.getLastRow() + 1;
+    current[&#x27;#&#x27;] = row - 1;
+    current[&#x27;Started (IST)&#x27;] = formatTime_(when);
+    current[ID_COL] = sessionId;
+    current[&#x27;Status&#x27;] = &#x27;Got to: &#x27; + SECTIONS[0];
+  }
+  var changes = {};
+  var set = function (header, value) { changes[header] = value; current[header] = value; };
+  set.current = current;
+  [&#x27;#&#x27;, &#x27;Started (IST)&#x27;, &#x27;Status&#x27;, ID_COL].forEach(function (h) { if (current[h] !== &#x27;&#x27; &amp;&amp; current[h] != null) changes[h] = current[h]; });
+  fill(set);
+  changes[&#x27;Last activity (IST)&#x27;] = formatTime_(when);
+  writeCells_(sheet, row, headers, changes);
+}
+
+function applyAnswer_(set, questionId, value) {
+  var q = questionById_(questionId);
+  var header = q ? q[1] : questionId;
+  set(header, formatAnswer_(questionId, value));
+  if (questionId === &#x27;email_signup&#x27;) set(&#x27;Status&#x27;, &#x27;Completed&#x27;);
+  else if (q) bumpStatus_(set, q[2]);
+  if (questionId === &#x27;q18_category&#x27;) {
+    var g = groupFromSituation_(value);
+    if (g) set(&#x27;Group&#x27;, g);
+  }
+}
+
+function applySession_(set, s) {
+  if (s.branch &amp;&amp; GROUPS[s.branch]) set(&#x27;Group&#x27;, GROUPS[s.branch]);
+  [[&#x27;programme&#x27;, &#x27;Programme&#x27;], [&#x27;year&#x27;, &#x27;Year&#x27;], [&#x27;department&#x27;, &#x27;Department&#x27;]].forEach(function (f) {
+    if (s[f[0]] &amp;&amp; !set.current[f[1]]) set(f[1], String(s[f[0]]));
+  });
+  if (s.completed_at) set(&#x27;Status&#x27;, &#x27;Completed&#x27;);
+  else if (s.furthest_tier != null) bumpStatus_(set, Number(s.furthest_tier) || 0);
+}
+
+/** Status only ever moves forward: Getting started -&gt; ... -&gt; Completed. */
+function bumpStatus_(set, section) {
+  var now = String(set.current[&#x27;Status&#x27;] || &#x27;&#x27;);
+  if (now === &#x27;Completed&#x27;) return;
+  var at = SECTIONS.indexOf(now.replace(&#x27;Got to: &#x27;, &#x27;&#x27;));
+  if (section &gt; at) set(&#x27;Status&#x27;, &#x27;Got to: &#x27; + SECTIONS[section]);
+}
+
+function readableSheet_(ss) {
+  var sheet = ss.getSheetByName(TAB_READABLE);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(TAB_READABLE, 0);
+  var headers = FIXED_COLS.concat(
+    QUESTIONS.filter(function (q) { return q[0] !== &#x27;respondent_name&#x27;; }).map(function (q) { return q[1]; }),
+    [ID_COL]);
+  ensureSize_(sheet, 2, headers.length);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  styleReadable_(sheet, headers.length);
+  return sheet;
+}
+
+function styleReadable_(sheet, nCols) {
+  // Everything as plain text, so phone numbers, &quot;2nd&quot;, &quot;+91...&quot; etc. stay exactly as typed.
+  sheet.getRange(1, 1, sheet.getMaxRows(), nCols).setNumberFormat(&#x27;@&#x27;)
+    .setWrap(true).setVerticalAlignment(&#x27;top&#x27;);
+  sheet.getRange(1, 1, 1, nCols)
+    .setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(2);
+  sheet.setColumnWidth(1, 45);
+  sheet.setColumnWidth(2, 130);
+  sheet.setColumnWidths(3, 2, 150);
+  sheet.setColumnWidths(5, 2, 170);
+  if (nCols &gt; 7) sheet.setColumnWidths(7, nCols - 7, 240);
+  sheet.setColumnWidth(nCols, 110);
+  sheet.setRowHeight(1, 48);
+}
+
+function writeCells_(sheet, row, headers, changes) {
+  // Unknown question ids (added to the survey later) get a new column.
+  Object.keys(changes).forEach(function (h) {
+    if (headers.indexOf(h) === -1) {
+      headers.push(h);
+      ensureSize_(sheet, 1, headers.length);
+      sheet.getRange(1, headers.length).setValue(h).setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+    }
+  });
+  ensureSize_(sheet, row, headers.length);
+  var range = sheet.getRange(row, 1, 1, headers.length);
+  var vals = range.getValues()[0];
+  headers.forEach(function (h, i) { if (h in changes) vals[i] = safe_(changes[h]); });
+  range.setNumberFormat(&#x27;@&#x27;).setValues([vals]);
+}
+
+function findRow_(sheet, col, id) {
+  var last = sheet.getLastRow();
+  if (last &lt; 2 || col &lt; 1) return 0;
+  var hit = sheet.getRange(2, col, last - 1, 1).createTextFinder(id).matchEntireCell(true).findNext();
+  return hit ? hit.getRow() : 0;
+}
+
+/* ===========================================================================
+   Contacts tab: one row per person who left contact details
+   ========================================================================= */
+function upsertContact_(ss, b, when) {
+  var headers = [&#x27;Name&#x27;, &#x27;Email&#x27;, &#x27;Phone / WhatsApp&#x27;, &#x27;OK to follow up&#x27;, &#x27;OK for juniors to contact&#x27;, &#x27;OK for a 20-min call&#x27;, &#x27;Saved (IST)&#x27;, ID_COL];
+  var sheet = ss.getSheetByName(TAB_CONTACTS);
+  if (!sheet || sheet.getRange(1, 1).getValue() !== &#x27;Name&#x27;) {
+    if (sheet) sheet.setName(&#x27;Contacts (old)&#x27;);
+    sheet = ss.insertSheet(TAB_CONTACTS);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, sheet.getMaxRows(), headers.length).setNumberFormat(&#x27;@&#x27;);
+  }
+  var name = &#x27;&#x27;;
+  var readable = ss.getSheetByName(TAB_READABLE);
+  if (readable) {
+    var rh = readable.getRange(1, 1, 1, readable.getLastColumn()).getValues()[0];
+    var r = findRow_(readable, rh.indexOf(ID_COL) + 1, b.session_id);
+    if (r) name = readable.getRange(r, rh.indexOf(&#x27;Name&#x27;) + 1).getValue();
+  }
+  var yes = function (v) { return v ? &#x27;Yes&#x27; : &#x27;No&#x27;; };
+  var vals = [name, b.email || &#x27;&#x27;, b.phone_whatsapp || &#x27;&#x27;, yes(b.ok_followup_contact), yes(b.ok_junior_contact),
+              yes(b.ok_interview_contact), formatTime_(when), b.session_id].map(safe_);
+  var row = findRow_(sheet, headers.length, b.session_id) || sheet.getLastRow() + 1;
+  ensureSize_(sheet, row, headers.length);
+  sheet.getRange(row, 1, 1, headers.length).setNumberFormat(&#x27;@&#x27;).setValues([vals]);
+}
+
+/* ===========================================================================
+   Rebuild &quot;All responses&quot; from the raw log (also imports old responses)
+   ========================================================================= */
+function rebuildAllResponses() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    ensureTabs_(ss);
+    var people = {}; // session_id -&gt; { started, last, answers: {qid: value}, session: {} }
+    var person = function (id, when) {
+      var p = people[id] || (people[id] = { started: when, last: when, answers: {}, session: {} });
+      if (when &amp;&amp; (!p.started || new Date(when) &lt; new Date(p.started))) p.started = when;
+      if (when &amp;&amp; (!p.last || new Date(when) &gt; new Date(p.last))) p.last = when;
+      return p;
+    };
+
+    var raw = ss.getSheetByName(TAB_RAW_ANSWERS);
+    if (raw &amp;&amp; raw.getLastRow() &gt; 1) {
+      raw.getRange(2, 1, raw.getLastRow() - 1, 4).getValues().forEach(function (r) {
+        if (!r[0]) return;
+        person(r[0], toIso_(r[3])).answers[r[1]] = parseRaw_(r[2]); // later rows win
+      });
+    }
+    var rs = ss.getSheetByName(TAB_RAW_SESSIONS);
+    if (rs &amp;&amp; rs.getLastRow() &gt; 1) {
+      var h = rs.getRange(1, 1, 1, rs.getLastColumn()).getValues()[0];
+      rs.getRange(2, 1, rs.getLastRow() - 1, h.length).getValues().forEach(function (r) {
+        if (!r[0]) return;
+        var p = person(r[0], toIso_(r[h.indexOf(&#x27;created_at&#x27;)]));
+        h.forEach(function (key, i) { if (r[i] !== &#x27;&#x27; &amp;&amp; r[i] != null) p.session[key] = r[i]; });
+      });
+    }
+
+    var old = ss.getSheetByName(TAB_READABLE);
+    if (old) { ss.setActiveSheet(old); ss.deleteSheet(old); }
+    var sheet = readableSheet_(ss);
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    var ids = Object.keys(people).sort(function (a, b) { return new Date(people[a].started) - new Date(people[b].started); });
+    var rows = ids.map(function (id, n) {
+      var p = people[id];
+      var cur = { &#x27;#&#x27;: n + 1, &#x27;Started (IST)&#x27;: formatTime_(p.started), &#x27;Status&#x27;: &#x27;Got to: &#x27; + SECTIONS[0] };
+      cur[ID_COL] = id;
+      var set = function (hh, v) { cur[hh] = v; };
+      set.current = cur;
+      QUESTIONS.forEach(function (q) { if (q[0] in p.answers) applyAnswer_(set, q[0], p.answers[q[0]]); });
+      Object.keys(p.answers).forEach(function (qid) { if (!questionById_(qid)) applyAnswer_(set, qid, p.answers[qid]); });
+      applySession_(set, p.session);
+      cur[&#x27;Last activity (IST)&#x27;] = formatTime_(p.last);
+      Object.keys(cur).forEach(function (hh) { if (headers.indexOf(hh) === -1) { headers.push(hh); ensureSize_(sheet, 1, headers.length); sheet.getRange(1, headers.length).setValue(hh); } });
+      return cur;
+    });
+    if (rows.length) {
+      var grid = rows.map(function (cur) { return headers.map(function (hh) { return safe_(hh in cur ? cur[hh] : &#x27;&#x27;); }); });
+      ensureSize_(sheet, grid.length + 1, headers.length);
+      sheet.getRange(2, 1, grid.length, headers.length).setNumberFormat(&#x27;@&#x27;).setValues(grid);
+    }
+    refreshSummary();
+    SpreadsheetApp.getActive().toast(&#x27;Rebuilt &#x27; + rows.length + &#x27; responses.&#x27;, &#x27;Survey&#x27;, 5);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ===========================================================================
+   Summary tab
+   ========================================================================= */
+function maybeRefreshSummary_() {
+  // At most once a minute, so a burst of completions doesn&#x27;t slow the survey.
+  var cache = CacheService.getScriptCache();
+  if (cache.get(&#x27;summary_recent&#x27;)) return;
+  cache.put(&#x27;summary_recent&#x27;, &#x27;1&#x27;, 60);
+  try { refreshSummary(); } catch (err) { Logger.log(&#x27;summary refresh failed: &#x27; + err); }
+}
+
+function refreshSummary() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var src = ss.getSheetByName(TAB_READABLE);
+  var sheet = ss.getSheetByName(TAB_SUMMARY) || ss.insertSheet(TAB_SUMMARY, 1);
+  sheet.clear();
+  sheet.getCharts().forEach(function (c) { sheet.removeChart(c); });
+  sheet.setColumnWidth(1, 360);
+  sheet.setColumnWidths(2, 2, 110);
+
+  var data = (src &amp;&amp; src.getLastRow() &gt; 1) ? src.getRange(1, 1, src.getLastRow(), src.getLastColumn()).getDisplayValues() : [[]];
+  var headers = data[0];
+  var col = function (h) { return headers.indexOf(h); };
+  // Test or junk responses listed on the &quot;Excluded&quot; tab are left out of every
+  // number below. They stay in &quot;All responses&quot; so nothing is ever deleted.
+  var excluded = excludedIds_(ss);
+  var everyone = data.slice(1);
+  var people = everyone.filter(function (r) { return !excluded[r[col(ID_COL)]]; });
+  var out = [];
+  var boldRows = [], titleRows = [];
+  var line = function (a, b, c) { out.push([a == null ? &#x27;&#x27; : a, b == null ? &#x27;&#x27; : b, c == null ? &#x27;&#x27; : c]); };
+
+  line(&#x27;Exchange Reality Check: summary&#x27;); titleRows.push(out.length);
+  line(&#x27;Last refreshed &#x27; + formatTime_(new Date().toISOString()) + &#x27;. Survey menu -&gt; Refresh summary to update.&#x27;);
+  line();
+
+  var completed = people.filter(function (r) { return r[col(&#x27;Status&#x27;)] === &#x27;Completed&#x27;; }).length;
+  line(&#x27;Overview&#x27;); titleRows.push(out.length);
+  line(&#x27;People who started&#x27;, people.length);
+  line(&#x27;People who finished&#x27;, completed);
+  line(&#x27;Finish rate&#x27;, people.length ? Math.round(100 * completed / people.length) + &#x27;%&#x27; : &#x27;-&#x27;);
+  var groupCounts = {};
+  people.forEach(function (r) { var g = r[col(&#x27;Group&#x27;)] || &#x27;(not reached yet)&#x27;; groupCounts[g] = (groupCounts[g] || 0) + 1; });
+  Object.keys(groupCounts).forEach(function (g) { line(&#x27;Group: &#x27; + g, groupCounts[g]); });
+  line(&#x27;Left out as test rows (see &quot;Excluded&quot; tab)&#x27;, everyone.length - people.length);
+  line();
+
+  // The findings table from the Notion plan (&quot;After these interview rounds&quot;).
+  line(&#x27;Findings table&#x27;); titleRows.push(out.length);
+  line(&#x27;Finding&#x27;, &#x27;Value&#x27;, &#x27;Out of&#x27;); boldRows.push(out.length);
+  var share = function (header, test) {
+    var c = col(header);
+    var answered = c &lt; 0 ? [] : people.filter(function (r) { var v = String(r[c] || &#x27;&#x27;); return v &amp;&amp; v !== &#x27;(skipped)&#x27;; });
+    if (!answered.length) return [&#x27;-&#x27;, 0];
+    var hits = answered.filter(function (r) { return test(String(r[c])); }).length;
+    return [Math.round(100 * hits / answered.length) + &#x27;%&#x27;, answered.length];
+  };
+  var finding = function (label, res) { line(label, res[0], res[1]); };
+  finding(&#x27;Didn’t know exchange existed&#x27;, share(&#x27;Knew exchange was possible?&#x27;, function (v) { return /^No, this is news/.test(v); }));
+  finding(&#x27;Had only heard of it vaguely&#x27;, share(&#x27;Knew exchange was possible?&#x27;, function (v) { return /^I.d heard/.test(v); }));
+  finding(&#x27;Considered it but never applied&#x27;, share(&#x27;Their situation&#x27;, function (v) { return /^I thought about it/.test(v); }));
+  finding(&#x27;Never seriously considered it&#x27;, share(&#x27;Their situation&#x27;, function (v) { return /^I.ve never/.test(v); }));
+  finding(&#x27;Started or applied, but didn’t go&#x27;, share(&#x27;Their situation&#x27;, function (v) { return /^I started|^I applied/.test(v); }));
+  var cc = col(&#x27;Cost guess for 1 semester&#x27;);
+  var guesses = cc &lt; 0 ? [] : people.map(function (r) { return Number(String(r[cc] || &#x27;&#x27;).replace(/[^0-9]/g, &#x27;&#x27;)); })
+    .filter(function (n) { return n &gt; 0; }).sort(function (a, b) { return a - b; });
+  var mid = Math.floor(guesses.length / 2);
+  var median = !guesses.length ? &#x27;-&#x27; : &#x27;₹&#x27; + indianNumber_(guesses.length % 2 ? guesses[mid] : (guesses[mid - 1] + guesses[mid]) / 2);
+  line(&#x27;Median cost guess&#x27;, median, guesses.length);
+  var typed = typedNumbers_(ss);
+  var typedLine = function (label) { line(label + &#x27; (from &quot;Typed numbers&quot; tab)&#x27;, typed[label] || &#x27;-&#x27;, &#x27;&#x27;); };
+  typedLine(&#x27;Real cost of one semester&#x27;);
+  finding(&#x27;Named a partner university (check names by hand)&#x27;, share(&#x27;A partner university they can name&#x27;, function (v) { return !/^(no idea|don.?t know|idk|-)$/i.test(v.trim()); }));
+  typedLine(&#x27;Applicants per seat&#x27;);
+  typedLine(&#x27;Returnees who agreed to share details&#x27;);
+  line();
+
+  // Launch waitlist. The two sources are kept apart on purpose: survey
+  // finishers are already interested, landing-page sign-ups are the honest
+  // demand signal.
+  var wl = waitlistRows_(ss).filter(function (w) { return !excluded[w.id]; });
+  var fromSurvey = wl.filter(function (w) { return w.source === &#x27;survey&#x27;; }).length;
+  var fromLanding = wl.filter(function (w) { return w.source === &#x27;landing&#x27;; }).length;
+  line(&#x27;Launch waitlist&#x27;); titleRows.push(out.length);
+  line(&#x27;Source&#x27;, &#x27;Sign-ups&#x27;, &#x27;Rate&#x27;); boldRows.push(out.length);
+  line(&#x27;From the survey (already interested, overstates demand)&#x27;, fromSurvey,
+    completed ? Math.round(100 * fromSurvey / completed) + &#x27;% of finishers&#x27; : &#x27;-&#x27;);
+  line(&#x27;From the landing page (the honest signal)&#x27;, fromLanding, &#x27;&#x27;);
+  var byChannel = {};
+  wl.forEach(function (w) { var k = (w.channel || &#x27;(no link tag)&#x27;) + &#x27; · &#x27; + w.source; byChannel[k] = (byChannel[k] || 0) + 1; });
+  Object.keys(byChannel).sort(function (a, b) { return byChannel[b] - byChannel[a]; }).forEach(function (k) {
+    line(&#x27;   &#x27; + k, byChannel[k], &#x27;&#x27;);
+  });
+  line();
+
+  // Responses per day
+  line(&#x27;Responses per day&#x27;); titleRows.push(out.length);
+  line(&#x27;Day&#x27;, &#x27;Started&#x27;, &#x27;Finished&#x27;); boldRows.push(out.length);
+  var days = {};
+  people.forEach(function (r) {
+    var d = String(r[col(&#x27;Started (IST)&#x27;)]).split(&#x27;,&#x27;)[0];
+    if (!d) return;
+    days[d] = days[d] || [0, 0];
+    days[d][0]++;
+    if (r[col(&#x27;Status&#x27;)] === &#x27;Completed&#x27;) days[d][1]++;
+  });
+  var dayKeys = Object.keys(days).sort(function (a, b) { return new Date(a) - new Date(b); });
+  var dayStart = out.length + 1;
+  dayKeys.forEach(function (d) { line(d, days[d][0], days[d][1]); });
+  var dayEnd = out.length;
+  line();
+
+  // Answer breakdowns
+  line(&#x27;How people answered&#x27;); titleRows.push(out.length);
+  line(&#x27;(% is out of the people who answered that question. Tick-all questions can add up past 100%.)&#x27;);
+  line();
+  BREAKDOWN.forEach(function (qid) {
+    var q = questionById_(qid);
+    var c = q ? col(q[1]) : -1;
+    if (c &lt; 0) return;
+    var counts = {}, answered = 0;
+    people.forEach(function (r) {
+      var v = String(r[c] || &#x27;&#x27;);
+      if (!v) return;
+      answered++;
+      v.split(&#x27;\n&#x27;).forEach(function (part) {
+        var a = part.replace(/^•\s*/, &#x27;&#x27;).trim() || &#x27;(skipped)&#x27;;
+        counts[a] = (counts[a] || 0) + 1;
+      });
+    });
+    if (!answered) return;
+    line(q[1], &#x27;People&#x27;, &#x27;%&#x27;); boldRows.push(out.length);
+    Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).forEach(function (a) {
+      line(&#x27;   &#x27; + a, counts[a], Math.round(100 * counts[a] / answered) + &#x27;%&#x27;);
+    });
+    line();
+  });
+
+  ensureSize_(sheet, out.length, 3);
+  sheet.getRange(1, 1, out.length, 3).setValues(out).setWrap(true).setVerticalAlignment(&#x27;top&#x27;);
+  titleRows.forEach(function (r) { sheet.getRange(r, 1, 1, 3).setFontWeight(&#x27;bold&#x27;).setFontSize(12).setBackground(&#x27;#F3ECDC&#x27;); });
+  sheet.getRange(1, 1).setFontSize(15);
+  boldRows.forEach(function (r) { sheet.getRange(r, 1, 1, 3).setFontWeight(&#x27;bold&#x27;).setBorder(false, false, true, false, false, false); });
+
+  if (dayEnd &gt;= dayStart) {
+    sheet.insertChart(sheet.newChart()
+      .setChartType(Charts.ChartType.LINE)
+      .addRange(sheet.getRange(dayStart - 1, 1, dayEnd - dayStart + 2, 3))
+      .setNumHeaders(1)
+      .setOption(&#x27;title&#x27;, &#x27;Responses per day&#x27;)
+      .setOption(&#x27;legend&#x27;, { position: &#x27;bottom&#x27; })
+      .setPosition(2, 5, 0, 0)
+      .build());
+  }
+}
+
+/* ===========================================================================
+   Helpers
+   ========================================================================= */
+/** Response IDs listed in column A of the &quot;Excluded&quot; tab (created if missing). */
+function waitlistSheet_(ss) {
+  var sheet = ss.getSheetByName(TAB_WAITLIST);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_WAITLIST);
+    sheet.getRange(1, 1, 1, WAITLIST_HEADERS.length).setValues([WAITLIST_HEADERS])
+      .setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, sheet.getMaxRows(), WAITLIST_HEADERS.length).setNumberFormat(&#x27;@&#x27;);
+    sheet.setColumnWidth(1, 260);
+    sheet.setColumnWidths(2, 3, 160);
+    sheet.setColumnWidth(5, 300);
+  }
+  return sheet;
+}
+
+/** One row per email per source (survey / landing). Signing up twice from the same place just updates it. */
+function upsertWaitlist_(ss, b, when) {
+  var email = String(b.email || &#x27;&#x27;).trim().toLowerCase();
+  var source = b.source === &#x27;landing&#x27; ? &#x27;landing&#x27; : &#x27;survey&#x27;;
+  if (!email) return;
+  var sheet = waitlistSheet_(ss);
+  var row = 0;
+  var last = sheet.getLastRow();
+  if (last &gt; 1) {
+    var vals = sheet.getRange(2, 1, last - 1, 2).getValues();
+    for (var i = 0; i &lt; vals.length; i++) {
+      if (String(vals[i][0]).toLowerCase() === email &amp;&amp; vals[i][1] === source) { row = i + 2; break; }
+    }
+  }
+  var cells = [email, source, b.channel || &#x27;&#x27;, formatTime_(when), b.session_id || &#x27;&#x27;].map(safe_);
+  if (!row) {
+    row = last + 1;
+  } else {
+    var old = sheet.getRange(row, 1, 1, cells.length).getValues()[0];
+    cells[2] = old[2] || cells[2]; // keep the first channel they came through
+    cells[3] = old[3] || cells[3]; // and when they first joined
+  }
+  ensureSize_(sheet, row, cells.length);
+  sheet.getRange(row, 1, 1, cells.length).setNumberFormat(&#x27;@&#x27;).setValues([cells]);
+}
+
+function waitlistRows_(ss) {
+  var sheet = ss.getSheetByName(TAB_WAITLIST);
+  if (!sheet || sheet.getLastRow() &lt; 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, WAITLIST_HEADERS.length).getValues().map(function (r) {
+    return { email: r[0], source: r[1], channel: r[2], id: String(r[4] || &#x27;&#x27;) };
+  }).filter(function (w) { return w.email; });
+}
+
+function excludedIds_(ss) {
+  var sheet = ss.getSheetByName(TAB_EXCLUDED);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_EXCLUDED);
+    sheet.getRange(1, 1, 1, 2).setValues([[ID_COL, &#x27;Why (e.g. test, junk)&#x27;]])
+      .setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 300);
+    sheet.setColumnWidth(2, 240);
+  }
+  var ids = {};
+  if (sheet.getLastRow() &gt; 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
+      var id = String(r[0] || &#x27;&#x27;).trim();
+      if (id) ids[id] = true;
+    });
+  }
+  return ids;
+}
+
+/** Numbers the survey can&#x27;t measure (from IR, returnees), typed by hand on the
+ *  &quot;Typed numbers&quot; tab so the Summary can show them without wiping them. */
+var TYPED_LABELS = [&#x27;Real cost of one semester&#x27;, &#x27;Applicants per seat&#x27;, &#x27;Returnees who agreed to share details&#x27;];
+function typedNumbers_(ss) {
+  var sheet = ss.getSheetByName(TAB_TYPED);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_TYPED);
+    var rows = [[&#x27;What&#x27;, &#x27;Value (type here)&#x27;, &#x27;Where it came from&#x27;]].concat(TYPED_LABELS.map(function (l) { return [l, &#x27;&#x27;, &#x27;&#x27;]; }));
+    sheet.getRange(1, 1, rows.length, 3).setValues(rows);
+    sheet.getRange(1, 1, 1, 3).setFontWeight(&#x27;bold&#x27;).setBackground(&#x27;#123049&#x27;).setFontColor(&#x27;#F3ECDC&#x27;);
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 300);
+    sheet.setColumnWidths(2, 2, 220);
+  }
+  var out = {};
+  if (sheet.getLastRow() &gt; 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues().forEach(function (r) {
+      if (r[0]) out[String(r[0]).trim()] = r[1];
+    });
+  }
+  return out;
+}
+
+function ensureTabs_(ss) {
+  // Older versions of this script wrote to &quot;Responses&quot; and &quot;Sessions&quot;.
+  var rename = function (from, to) {
+    var s = ss.getSheetByName(from);
+    if (s &amp;&amp; !ss.getSheetByName(to)) s.setName(to);
+  };
+  rename(&#x27;Responses&#x27;, TAB_RAW_ANSWERS);
+  rename(&#x27;Sessions&#x27;, TAB_RAW_SESSIONS);
+}
+
+function appendRaw_(ss, name, headers, row) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastColumn() &lt; headers.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  sheet.appendRow(row.map(safe_));
+}
+
+/** New tabs start at 1000 x 26; grow them before writing past the edge. */
+function ensureSize_(sheet, rows, cols) {
+  var maxR = sheet.getMaxRows(), maxC = sheet.getMaxColumns();
+  if (rows &gt; maxR) sheet.insertRowsAfter(maxR, rows - maxR + 200);
+  if (cols &gt; maxC) sheet.insertColumnsAfter(maxC, cols - maxC);
+}
+
+function questionById_(id) {
+  for (var i = 0; i &lt; QUESTIONS.length; i++) if (QUESTIONS[i][0] === id) return QUESTIONS[i];
+  return null;
+}
+
+/** Stored answer -&gt; what a person should read in the cell. */
+function formatAnswer_(qid, v) {
+  if (v === null || v === undefined) return &#x27;&#x27;;
+  if (Array.isArray(v)) return v.length ? v.map(function (x) { return &#x27;• &#x27; + x; }).join(&#x27;\n&#x27;) : &#x27;(none ticked)&#x27;;
+  if (typeof v === &#x27;object&#x27;) {
+    if (v.no_idea) return &#x27;No idea&#x27;;
+    if (typeof v.value === &#x27;number&#x27;) return &#x27;₹&#x27; + indianNumber_(v.value);
+    return JSON.stringify(v);
+  }
+  if (typeof v === &#x27;boolean&#x27;) return v ? &#x27;Yes&#x27; : &#x27;No&#x27;;
+  if (typeof v === &#x27;number&#x27;) return SCALES.indexOf(qid) !== -1 ? v + &#x27; / 5&#x27; : String(v);
+  var s = String(v).trim();
+  if (!s) return &#x27;(skipped)&#x27;;
+  if (SCALES.indexOf(qid) !== -1 &amp;&amp; /^[1-5]$/.test(s)) return s + &#x27; / 5&#x27;;
+  return s;
+}
+
+/** Raw log cells hold JSON for lists / objects / numbers; plain text otherwise. */
+function parseRaw_(v) {
+  if (typeof v !== &#x27;string&#x27;) return v;
+  var t = v.trim();
+  if (/^[\[{]/.test(t) || /^-?\d+(\.\d+)?$/.test(t) || t === &#x27;true&#x27; || t === &#x27;false&#x27; || t === &#x27;null&#x27;) {
+    try { return JSON.parse(t); } catch (e) { return v; }
+  }
+  return v;
+}
+
+function groupFromSituation_(answer) {
+  var a = String(answer || &#x27;&#x27;);
+  if (/^I’ve never|^I&#x27;ve never|^I thought/.test(a)) return GROUPS.A;
+  if (/^I started|^I applied/.test(a)) return GROUPS.B;
+  if (/^I have been/.test(a)) return GROUPS.C;
+  return &#x27;&#x27;;
+}
+
+function indianNumber_(n) {
+  var s = String(Math.round(n));
+  if (s.length &lt;= 3) return s;
+  var last3 = s.slice(-3), rest = s.slice(0, -3);
+  return rest.replace(/\B(?=(\d{2})+(?!\d))/g, &#x27;,&#x27;) + &#x27;,&#x27; + last3;
+}
+
+function formatTime_(iso) {
+  if (!iso) return &#x27;&#x27;;
+  var d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d)) return String(iso);
+  return Utilities.formatDate(d, TZ, &#x27;dd MMM yyyy, h:mm a&#x27;);
+}
+
+function toIso_(v) {
+  if (v instanceof Date) return v.toISOString();
+  return v ? String(v) : &#x27;&#x27;;
+}
+
+/** Stops typed answers like &quot;=SUM(...)&quot; or &quot;+91...&quot; being run as formulas. */
+function safe_(v) {
+  if (typeof v === &#x27;string&#x27; &amp;&amp; /^[=+\-@]/.test(v)) return &quot;&#x27;&quot; + v;
+  return v;
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+</textarea></div>
+
+<h2>Part 3 · Check it worked</h2>
+<ol>
+<li>Open the survey in a private window and answer the first 2 questions.</li>
+<li>Within a minute, a new row should appear in <b>All responses</b>.</li>
+<li>Then add that test's Response ID to <b>Excluded</b> too.</li>
+<li>Tell Claude "done". It can confirm Supabase is receiving answers.</li>
+</ol>
+<div class="ok">After this, every new answer lands in both places in the same layout automatically. You never need to paste these again unless the code changes.</div>
+
+<h2>What's in this folder</h2>
+<div class="tree">Survey_tool/
+├── INSTALL.html          ← this page
+├── index.html            ← the survey itself (what GitHub Pages serves)
+├── join.html             ← the landing page + waitlist
+├── README.md             ← technical overview
+├── setup/                ← the code you paste, in order
+│   ├── 1-supabase-tables.sql          already done (tables exist)
+│   ├── 2-supabase-save-functions.sql  = Block 1
+│   ├── 3-google-sheet-script.gs       = Block 2
+│   └── 4-supabase-waitlist.sql        = Block 1b
+└── docs/
+    ├── how-it-works.html ← the full system guide (start here)
+    └── RESULTS-GUIDE.md  ← how to read results in the Sheet and Supabase</div>
+<p class="lede">This page is generated from the files in <code>setup/</code>. If those change, the blocks here must be regenerated.</p>
+</main>
+<script>
+function copyBlock(id,btn){var t=document.getElementById(id);var done=function(){btn.textContent='Copied ✓';setTimeout(function(){btn.textContent='Copy all'},2000)};
+if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t.value).then(done,function(){t.select();document.execCommand('copy');done()})}else{t.select();document.execCommand('copy');done()}}
+</script></body></html>

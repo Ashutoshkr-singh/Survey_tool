@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sem Exchange System Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F4F2;--card:#fff;--ink:#0E0E0E;--ink-2:#5E5E5E;--ink-3:#8F8F8F;--line:#E3E3E0;--accent:#B23A2E;--ok:#2F7A4F;--warn:#9A6200;--code:#ECECE8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111;--card:#1A1A1A;--ink:#F2F2F0;--ink-2:#B4B4B0;--ink-3:#85857F;--line:#2C2C2A;--accent:#E2836C;--ok:#6CC191;--warn:#E0A85A;--code:#232321}}
+:root[data-theme="dark"]{--bg:#111;--card:#1A1A1A;--ink:#F2F2F0;--ink-2:#B4B4B0;--ink-3:#85857F;--line:#2C2C2A;--accent:#E2836C;--ok:#6CC191;--warn:#E0A85A;--code:#232321}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.6 'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:900px;margin:0 auto;padding:40px 16px 96px}
+h1{font-size:clamp(32px,7vw,48px);line-height:1.04;letter-spacing:-.045em;font-weight:600;margin:10px 0 0}
+h2{font-size:clamp(24px,4.6vw,30px);letter-spacing:-.035em;font-weight:600;margin:64px 0 10px;padding-top:20px;border-top:1px solid var(--line)}
+h3{font-size:18px;letter-spacing:-.02em;font-weight:600;margin:28px 0 8px}
+p{margin:8px 0}
+a{color:inherit;text-underline-offset:3px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-2)}
+.eyebrow::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.lede{font-size:18px;color:var(--ink-2);max-width:60ch;margin-top:14px}
+.muted{color:var(--ink-3)}
+nav.toc{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;columns:2;column-gap:28px}
+nav.toc a{display:block;padding:3px 0;text-decoration:none;color:var(--ink-2);break-inside:avoid}
+nav.toc a:hover{color:var(--ink)}
+@media (max-width:640px){nav.toc{columns:1}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor;margin-right:6px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--accent)}
+.wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:15px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+code{font:500 13.5px 'Geist Mono',ui-monospace,Consolas,monospace;background:var(--code);padding:1px 6px;border-radius:5px;word-break:break-word}
+pre{font:500 13px/1.55 'Geist Mono',ui-monospace,Consolas,monospace;background:var(--code);padding:14px 16px;border-radius:12px;overflow-x:auto;margin:10px 0}
+pre code{background:none;padding:0}
+ol,ul{padding-left:22px} li{margin:5px 0}
+.flow{display:grid;gap:8px;margin:14px 0}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.box b{display:block;font-weight:600}
+.arrow{text-align:center;color:var(--ink-3);font-size:18px;line-height:1}
+.check{list-style:none;padding:0}
+.check li{padding:10px 12px 10px 40px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0;position:relative}
+.check li::before{content:"";position:absolute;left:14px;top:14px;width:14px;height:14px;border:1.5px solid var(--ink-3);border-radius:4px}
+.check li span{display:block;color:var(--ink-2);font-size:14px;margin-top:2px}
+details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0}
+summary{cursor:pointer;font-weight:600}
+.note{border-left:3px solid var(--warn);background:var(--card);padding:10px 14px;border-radius:0 10px 10px 0;margin:12px 0}
+</style>
+</head>
+<body>
+<main>
+<span class="eyebrow">Sem Exchange · internal guide</span>
+<h1>How the whole system works</h1>
+<p class="lede">Every page, every place data is stored, and how to check each part yourself. Written 26 Nov 2026, after the redesign and the waitlist were built and tested end to end.</p>
+
+<nav class="toc">
+<a href="#launch">0. Launch: what to share, and when</a>
+<a href="#map">1. The whole system on one page</a>
+<a href="#links">2. Every link you need</a>
+<a href="#survey">3. The survey: what students go through</a>
+<a href="#tap">4. What happens on every tap</a>
+<a href="#landing">5. The landing page and waitlist</a>
+<a href="#channels">6. Channel links: where people came from</a>
+<a href="#supabase">7. Supabase: the database, from zero</a>
+<a href="#sheet">8. The Google Sheet and its script</a>
+<a href="#verify">9. Verify everything yourself</a>
+<a href="#routine">10. Daily routine while collecting</a>
+<a href="#wrong">11. What can go wrong</a>
+<a href="#change">12. Changing things safely</a>
+<a href="#design">13. Why it looks and reads this way</a>
+<a href="#questions">14. Every question, from the code</a>
+</nav>
+
+<h2 id="launch">0. Launch: what to share, and when</h2>
+<p><b>Share one link now: the survey.</b> Hold the landing page back for now. The survey shows the pitch only at the very end so that seeing the product can’t colour anyone’s answers. If people read the landing page first, they arrive at the survey already sold, and their answers on awareness, cost and interest stop being honest. The survey already collects launch sign-ups at its end (source “survey”), so you lose nothing by waiting.</p>
+<div class="wrap"><table>
+<tr><th>Phase</th><th>Share</th><th>Goal</th></tr>
+<tr><td>1 · Now, until about 150 responses</td><td>Only the survey link, tagged per channel</td><td>Honest research data + survey sign-ups</td></tr>
+<tr><td>2 · After that</td><td>The landing page <code>join.html</code>, tagged per channel</td><td>Grow the waitlist; compare channels</td></tr>
+<tr><td>Exception</td><td>Landing page to people who have already done the survey (e.g. in the thank-you follow-up)</td><td>No bias risk: their answers are in</td></tr>
+</table></div>
+<p><b>One link per place, never the bare link.</b> Add <code>?from=</code> and a short name, so the Sheet tells you which place worked:</p>
+<div class="wrap"><table>
+<tr><th>Where you post</th><th>Link</th></tr>
+<tr><td>Channel i</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?from=channel-i</code></td></tr>
+<tr><td>Branch / batch WhatsApp group</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?from=wa-pie-3rd</code> (one tag per group)</td></tr>
+<tr><td>Hostel group</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?from=hostel-rjb</code></td></tr>
+<tr><td>Instagram</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?from=insta</code></td></tr>
+<tr><td>Seniors who went abroad (sent personally)</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?from=returnees</code></td></tr>
+</table></div>
+<p><b>Message to send</b> (short, honest, and doesn’t pitch the product):</p>
+<div class="box">“We’re IITR students trying to find out why so few of us do a semester abroad, even with 290+ partner universities. A very short survey: whether you’ve never thought about it or already went, your answer helps. We’ll send everyone the real costs and what we find. [link]”</div>
+<p><b>Trying it yourself:</b> always add <code>?test</code> (<code>https://ashutoshkr-singh.github.io/Survey_tool/?test</code>). Nothing is saved. If you forget, paste your response ID into the Sheet’s Excluded tab.</p>
+
+<h2 id="map">1. The whole system on one page</h2>
+<p>Two web pages collect data. Two places store it. Nothing runs on a server of your own: the pages are plain files on GitHub Pages, and they talk directly to Supabase and to a small script inside your Google Sheet.</p>
+<div class="flow">
+<div class="grid2">
+<div class="box"><b>Survey · <code>index.html</code></b>One question per screen. Saves every answer the moment it’s given. Ends with the pitch, the email and a share button.</div>
+<div class="box"><b>Landing page · <code>join.html</code></b>Explains what you’re building. One ask: “Join the waitlist”. Links to the survey.</div>
+</div>
+<div class="arrow">↓ both send every save to two places at once ↓</div>
+<div class="grid2">
+<div class="box"><b>Supabase (database)</b>The complete, strict copy. Tables: <code>sessions</code>, <code>answers</code>, <code>contacts</code>, <code>waitlist</code>. The public pages can only add, never read.</div>
+<div class="box"><b>Google Sheet (script “SEMEx”)</b>The copy you read. One row per person, a Summary with your findings table, Waitlist and Contacts tabs.</div>
+</div>
+</div>
+
+<h3>Files in the repo</h3>
+<div class="wrap"><table>
+<tr><th>File</th><th>What it is</th><th>Where it runs</th></tr>
+<tr><td><code>index.html</code></td><td>The survey (all questions, logic, saving)</td><td>GitHub Pages</td></tr>
+<tr><td><code>join.html</code></td><td>Landing page + waitlist form</td><td>GitHub Pages</td></tr>
+<tr><td><code>setup/1-supabase-tables.sql</code></td><td>Tables, security rules, public totals</td><td>Supabase (already run)</td></tr>
+<tr><td><code>setup/2-supabase-save-functions.sql</code></td><td>The save functions + private readable views</td><td>Supabase (run 26 Nov)</td></tr>
+<tr><td><code>setup/3-google-sheet-script.gs</code></td><td>The Sheet script: readable rows, Summary, Waitlist</td><td>Sheet → Apps Script “SEMEx”, version 3</td></tr>
+<tr><td><code>setup/4-supabase-waitlist.sql</code></td><td>Waitlist table, <code>join_waitlist()</code>, public count</td><td>Supabase (run 26 Nov)</td></tr>
+<tr><td><code>INSTALL.html</code></td><td>Copy-paste blocks to reinstall any setup file</td><td>Your computer</td></tr>
+<tr><td><code>docs/how-it-works.html</code></td><td>This guide</td><td>GitHub Pages + a PDF copy</td></tr>
+<tr><td><code>docs/RESULTS-GUIDE.md</code></td><td>Older notes on reading results</td><td>Your computer</td></tr>
+</table></div>
+
+<h2 id="links">2. Every link you need</h2>
+<div class="wrap"><table>
+<tr><th>What</th><th>Link</th></tr>
+<tr><td>Survey (live)</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/</code></td></tr>
+<tr><td>Survey, test mode (saves nothing)</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/?test</code></td></tr>
+<tr><td>This guide (online)</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/docs/how-it-works.html</code></td></tr>
+<tr><td>Landing page (live)</td><td><code>https://ashutoshkr-singh.github.io/Survey_tool/join.html</code></td></tr>
+<tr><td>Code</td><td><code>https://github.com/Ashutoshkr-singh/Survey_tool</code></td></tr>
+<tr><td>Results Sheet (private)</td><td>“Survey_data_Semex” in your Google Drive</td></tr>
+<tr><td>Sheet script</td><td>Apps Script project “SEMEx” (Extensions → Apps Script from the Sheet)</td></tr>
+<tr><td>Database</td><td>supabase.com → project “Foreign_exchange”, address starting <code>flrlczafuuufdvhebaph</code></td></tr>
+<tr><td>Plan and research</td><td>Notion page “Sem Exchange Platform”</td></tr>
+</table></div>
+<p class="note">Pushed live on 26 Nov 2026. Both pages above are the final versions described in this guide.</p>
+
+<h2 id="survey">3. The survey: what students go through</h2>
+<p>Four sections. The header shows the section name and “2/4”, never a question count, because a visible “7 / 35” makes people quit early.</p>
+<p><b>Every question is a ticket.</b> A slim strip on top shows only the route <b>IITR ✈ ABRD</b>; the ✈ and a solid line move along it as they progress. A perforated tear line separates it from the question. Nothing else sits on the ticket, on purpose: the section name is already in the header, and extra labels made each screen feel crowded. The welcome screen keeps just a title, one line, an optional name field and Start; the two reasons to answer sit under a “Why answer?” dropdown.</p>
+<p><b>Test mode:</b> open the survey with <code>?test</code> on the end (e.g. <code>…/Survey_tool/?test</code>). A yellow bar says “Test mode: nothing you answer is saved”, and nothing reaches Supabase or the Sheet. Use this whenever you or a teammate want to try it.</p>
+<div class="wrap"><table>
+<tr><th>Section</th><th>Who</th><th>What it asks</th></tr>
+<tr><td>1 · Getting started</td><td>Everyone</td><td>Did they know exchange exists, cost guess (starts blank so nothing anchors it), how sure, programme, year, department, optional gender and family money</td></tr>
+<tr><td>2 · What you know</td><td>Everyone (+1 PG-only question)</td><td>Name a partner university, who handles it, <b>where they look for info</b>, CGPA cutoff, when applications open, do credits count, then “Which is closest to you?”</td></tr>
+<tr><td>3 · Your story</td><td>One of three groups</td><td><b>A</b> never applied: what holds them back. <b>B</b> started, didn’t finish: where it broke. <b>C</b> went: real cost, funding, course mapping, contact for juniors.</td></tr>
+<tr><td>4 · Wrapping up</td><td>Everyone</td><td>How they hear about opportunities, “I’d apply if…”, follow-up permission, <b>the pitch</b> (“Here’s what we’re building” → “Tell me when it launches” / “Not now”), then <b>email (required)</b></td></tr>
+</table></div>
+<p><b>How the group is chosen:</b> the answer to “Which is closest to you?” decides it. “Never seriously considered” or “thought about it, never started” → A. “Started”, “applied and wasn’t selected”, “selected but didn’t go” → B. “Been on exchange / on one now” → C.</p>
+<p><b>Length by path</b> (counted from the code): A has 35 screens with 2 required written answers; B has 38 with 2; C has 40 with 4. C is longest on purpose: returnees are the rarest and most valuable people to hear from.</p>
+<p><b>The ending:</b> when they submit the email, the last ticket flies up and away while a plane crosses the screen. Then their <b>boarding pass</b> flies in and lands. Reloading a finished survey shows the pass without the animation, and phones set to reduce motion skip it.</p>
+<div class="wrap"><table>
+<tr><th>Pass field</th><th>Where it comes from</th></tr>
+<tr><td>Route</td><td>IITR → ABRD. For returnees (group C), the first letters of where they went, e.g. MUNI</td></tr>
+<tr><td>Name</td><td>The name they typed on the check-in ticket (or Guest), shown large</td></tr>
+<tr><td>Seat, barcode</td><td>Made from their session ID, so every pass is unique</td></tr>
+<tr><td>Gate</td><td>Initials of their department, e.g. PIE</td></tr>
+<tr><td>Status</td><td>A: Standby · B: Rebooking · C: Landed</td></tr>
+<tr><td>Priority badge</td><td>Shown in the top bar only if they joined the launch list</td></tr>
+</table></div>
+<p>Below the pass: “You’re checked in, Name.”, one line (“We’ll email you what we find.”), a “You’re on the launch list” tag if they said yes, and two buttons. <b>Share my boarding pass</b> makes a picture of the pass and opens the phone’s share sheet (or downloads it). The picture library loads only on that tap, so the survey stays fast. <b>Send the survey to a friend</b> shares the link instead.</p>
+<p><b>Error messages:</b> only one shows at a time, above the button. Tapping again refreshes it rather than stacking copies.</p>
+
+<h2 id="tap">4. What happens on every tap</h2>
+<ol>
+<li><b>The answer is stored in the phone’s browser first.</b> If they close the tab and reopen the link, they continue where they left off.</li>
+<li><b>It joins a send queue</b> (also kept in the browser).</li>
+<li><b>Each queued item goes to Supabase and the Sheet at the same time.</b> It leaves the queue as soon as either one accepts it.</li>
+<li><b>If both fail</b> (no internet), it stays queued and retries every 15 seconds and whenever the phone comes back online.</li>
+<li><b>If only one fails</b>, it isn’t retried. The other copy has it. This is why Supabase has none of the October responses.</li>
+</ol>
+<div class="note"><b>Fixed on 26 Nov:</b> answers given while an earlier answer was still sending used to be silently dropped. It cost the “completed” marker, the email and the waitlist sign-up in the first test. The queue now re-reads itself before saving, and sends anything that arrived meanwhile. I tested 13 answers fired at once: all arrived in both places.</div>
+<h3>What each kind of save writes</h3>
+<div class="wrap"><table>
+<tr><th>Save</th><th>When</th><th>Supabase</th><th>Sheet</th></tr>
+<tr><td><code>answer</code></td><td>Every answer</td><td>1 row in <code>answers</code> (or updates it if they change their answer)</td><td>A line in Raw answers + their row in All responses</td></tr>
+<tr><td><code>session</code></td><td>Programme, year, department, group chosen, and at the end</td><td>Their row in <code>sessions</code> (group, progress, finish time)</td><td>A line in Raw sessions + Group/Status in All responses</td></tr>
+<tr><td><code>contact</code></td><td>At the end, with the email</td><td><code>contacts</code></td><td>Contacts tab</td></tr>
+<tr><td><code>waitlist</code></td><td>At the end, only if they chose “Tell me when it launches”</td><td><code>waitlist</code> with source = survey</td><td>Waitlist tab</td></tr>
+</table></div>
+
+<h2 id="landing">5. The landing page and waitlist</h2>
+<p><b>Flow:</b> headline → one-line explanation → email + “Join the waitlist ↗” → secondary “Take the short survey” → three numbers → the problem → what they’ll get → <b>a look inside</b> (product mock-ups) → a final dark “Be the first to know” sign-up.</p>
+<p><b>A look inside:</b> a minimal dashboard in a browser window: an icon sidebar, the “Find your seat” list (university, fit bar, cost, status dot) and a real-cost panel drawn as one stacked bar with a legend. Below it, three phone screens: courses approved before (✓ badges), seniors to ask, and a countdown ring to the next deadline. On phones the dashboard becomes one column and the phone screens swipe sideways. It’s all plain HTML and CSS, no images, so it loads instantly.</p>
+<ul>
+<li><b>On submit:</b> the email is checked, then sent to Supabase (<code>join_waitlist</code>, source = <code>landing</code>) and the Sheet at the same time. Success if either accepts it.</li>
+<li><b>Signing up twice</b> from the same place just updates the same row. One email can appear once as “survey” and once as “landing”; that’s intended.</li>
+<li><b>After joining:</b> the form becomes “You’re on the list”, with buttons to take the survey or share. The browser remembers it, so a revisit shows the same state.</li>
+<li><b>The counter</b> (“N IITR students are already waiting”) stays hidden until there are 25 sign-ups, so it never shows a weak number.</li>
+<li><b>The mock-ups</b> are labelled “Example data” in the window bar, and use placeholder names (University A–D, made-up seniors) on purpose: students must not mistake them for real seats or real people.</li>
+</ul>
+<p class="note"><b>Check before sharing:</b> the numbers 294 MoUs, 61 countries and 24 credits come from your Notion problem statement. Confirm them against IITR’s current MoU list and Senate policy, since the page cites those as the source.</p>
+<h3>Why two waitlist counts</h3>
+<p><b>Survey sign-ups</b> come from people who just spent several minutes on the topic, so they overstate demand. <b>Landing sign-ups</b> come from people who saw a link in a group chat, which is the honest demand signal. The Summary shows them side by side, never added together.</p>
+
+<h2 id="channels">6. Channel links: where people came from</h2>
+<p>Add <code>?from=</code> and a short tag to any link. Letters, numbers, - and _ only.</p>
+<pre><code>…/Survey_tool/?from=hostel-rjb
+…/Survey_tool/?from=cr-pie-2nd
+…/Survey_tool/join.html?from=insta-story</code></pre>
+<ul>
+<li><b>Survey:</b> the tag is saved as “Came from (link tag)” when they press Start. People who only open the link aren’t counted as starting.</li>
+<li><b>Landing page:</b> the tag is saved with the sign-up. Its “Take the survey” buttons pass the same tag on, so you can follow one channel from landing to survey.</li>
+<li><b>Where you see it:</b> the “Came from (link tag)” breakdown in Summary, and the “Launch waitlist” section, which counts per channel.</li>
+</ul>
+
+<h2 id="supabase">7. Supabase: the database, from zero</h2>
+<p><b>A database</b> is a set of strict tables living on a server. <b>Supabase</b> hosts yours and gives it a web address. The pages use the <b>public key</b>, which, thanks to security rules (Row Level Security), can only call four save functions and read totals. Only you, logged in to the dashboard, can read actual rows.</p>
+<h3>Tables</h3>
+<div class="wrap"><table>
+<tr><th>Table</th><th>One row per</th><th>Main columns</th></tr>
+<tr><td><code>sessions</code></td><td>person who started</td><td><code>id</code> (random), <code>created_at</code>, <code>programme</code>, <code>year</code>, <code>department</code>, <code>branch</code> (A/B/C), <code>furthest_tier</code> (0–3), <code>completed_at</code></td></tr>
+<tr><td><code>answers</code></td><td>answer</td><td><code>session_id</code>, <code>question_id</code> (e.g. <code>q10_cost_guess</code>), <code>value</code> (text, list, or <code>{"value":450000,"no_idea":false}</code>)</td></tr>
+<tr><td><code>contacts</code></td><td>person who left an email</td><td><code>email</code>, <code>phone_whatsapp</code>, ok-to-follow-up / juniors / call</td></tr>
+<tr><td><code>waitlist</code></td><td>email per source</td><td><code>email</code>, <code>source</code> (survey/landing), <code>channel</code>, <code>session_id</code></td></tr>
+</table></div>
+<p><b>Why one row per answer:</b> an answer is saved the instant it’s given, so a half-finished response still counts. A new question needs no database change.</p>
+<h3>Functions (the only way in for the public pages)</h3>
+<p><code>save_session</code>, <code>save_answer</code>, <code>save_contact</code>, <code>join_waitlist</code>. Each checks and trims its input, then adds or updates a row.</p>
+<h3>Views (ready-made read-only tables)</h3>
+<div class="wrap"><table>
+<tr><th>View</th><th>Who can read</th><th>Shows</th></tr>
+<tr><td><code>survey_progress</code></td><td>Public</td><td>Started / completed counts (the survey’s progress bar)</td></tr>
+<tr><td><code>question_stats</code></td><td>Public</td><td>Answer counts for 4 questions (the comparison screens)</td></tr>
+<tr><td><code>waitlist_counts</code></td><td>Public</td><td>Sign-ups per source, no emails</td></tr>
+<tr><td><code>responses_readable</code></td><td>Only you</td><td>One row per person, plain headings</td></tr>
+<tr><td><code>answer_breakdown</code>, <code>responses_by_day</code></td><td>Only you</td><td>Counts per option; responses per day</td></tr>
+</table></div>
+<h3>Queries you can paste into SQL Editor</h3>
+<pre><code>-- Everyone, readable
+select * from responses_readable order by "#" desc;
+
+-- Started vs finished
+select * from survey_progress;
+
+-- Waitlist, both sources, newest first
+select created_at, email, source, channel from waitlist order by created_at desc;
+
+-- Responses per channel
+select a.value #>> '{}' as channel, count(*)
+from answers a where a.question_id = 'from_channel' group by 1 order by 2 desc;
+
+-- Delete one test response (answers and contact go with it)
+delete from sessions where id = 'PASTE-ID-HERE';</code></pre>
+
+<h2 id="sheet">8. The Google Sheet and its script</h2>
+<p>The Sheet has a small program attached (Apps Script project <b>“SEMEx”</b>), published as a web address the pages send to. It’s on <b>version 3</b> of one deployment, whose address never changes. Each time a save arrives it updates the tabs below.</p>
+<div class="wrap"><table>
+<tr><th>Tab</th><th>What’s in it</th><th>Updated</th></tr>
+<tr><td><b>All responses</b></td><td>One row per person, one column per question, plain headings. Status (how far they got), Group (A/B/C), Came from.</td><td>Live, every answer</td></tr>
+<tr><td><b>Summary</b></td><td>Overview, <b>Findings table</b> (from your Notion plan), <b>Launch waitlist</b> (survey vs landing, per channel), responses per day + chart, how everyone answered each choice question</td><td>When someone finishes, or Survey → Refresh summary</td></tr>
+<tr><td><b>Waitlist</b></td><td>Email, source, channel, joined time</td><td>Live</td></tr>
+<tr><td><b>Contacts</b></td><td>Emails/phones and what each person agreed to</td><td>When someone finishes</td></tr>
+<tr><td><b>Excluded</b></td><td>Response IDs to leave out of every number (tests, junk). Currently 6 of my test IDs.</td><td>You type here</td></tr>
+<tr><td><b>Typed numbers</b></td><td>Real cost, applicants per seat, returnees who’ll share. Things only IR and interviews can tell you.</td><td>You type here</td></tr>
+<tr><td>Raw answers / Raw sessions</td><td>Every save as it arrived. The backup that “Rebuild” reads from.</td><td>Live; don’t edit</td></tr>
+</table></div>
+<p><b>Survey menu</b> (in the Sheet’s menu bar): <i>Refresh summary</i>, and <i>Rebuild “All responses” from raw data</i>. Rebuild redraws the readable tab in survey order; use it if a column ever looks out of place.</p>
+<p><b>Sharing:</b> Restricted, so only your Google account can open it. Add a teammate by email through Share.</p>
+
+<h2 id="verify">9. Verify everything yourself</h2>
+<p>About 15 minutes. Use a private window on your phone so it behaves like a fresh student.</p>
+<ul class="check">
+<li>Open the survey with <code>?from=me-test</code>, type the name TEST-ME, answer 3 questions.<span>Expect: a new row at the bottom of All responses within a minute, with “me-test” under Came from.</span></li>
+<li>Close the tab, reopen the same link.<span>Expect: you continue at question 4, with a “Welcome back” note.</span></li>
+<li>On the cost question, look before touching anything.<span>Expect: “₹ ?”, an empty amount box, and Continue greyed out until you set an amount or tap “I have no idea”.</span></li>
+<li>Finish the survey, say “Tell me when it launches”, and enter an email you control.<span>Expect: the “Thanks” screen with “You’re on the launch list”; a row in Waitlist (source survey) and in Contacts.</span></li>
+<li>In Supabase SQL Editor run <code>select * from survey_progress;</code><span>Expect: started and completed both went up by 1.</span></li>
+<li>Open <code>join.html?from=me-test</code>, enter a bad email, then a good one.<span>Expect: “Please enter a valid email.”, then “You’re on the list.” and a Waitlist row with source landing.</span></li>
+<li>Paste your test Response ID into Excluded, then Survey → Refresh summary.<span>Expect: your test disappears from every count, including the survey waitlist count.</span></li>
+<li>Clean up: delete your landing row from the Waitlist tab (it has no Response ID to exclude), and run the delete query from section 7 in Supabase.<span>Expect: Supabase back to its previous counts.</span></li>
+<li>Open the Sheet link in a browser where you’re not signed in.<span>Expect: “You need access”.</span></li>
+</ul>
+
+<h2 id="routine">10. Daily routine while collecting (5 minutes)</h2>
+<ol>
+<li><b>Summary → Overview:</b> started, finished, finish rate. Below about 50% means people are dropping out, so look at where Status stops in All responses.</li>
+<li><b>Responses per day</b> and <b>Came from:</b> which channel delivered. Push the ones that work.</li>
+<li><b>Year and branch spread:</b> if one group dominates, target the others.</li>
+<li><b>Skim new rows:</b> add junk IDs to Excluded.</li>
+<li><b>Launch waitlist:</b> watch the landing count, your honest demand signal.</li>
+<li>Once a week, add what you learn from IR and returnees to <b>Typed numbers</b>.</li>
+</ol>
+
+<h2 id="wrong">11. What can go wrong</h2>
+<div class="wrap"><table>
+<tr><th>Problem</th><th>How you notice</th><th>Fix</th></tr>
+<tr><td>Supabase pauses (free projects pause after about a week with no activity)</td><td>Dashboard says Paused; the survey progress bar shows nothing</td><td>Restore project. The Sheet keeps collecting meanwhile.</td></tr>
+<tr><td>Someone redeploys the Sheet script as a <i>new</i> deployment</td><td>New answers stop appearing in the Sheet</td><td>Always use Deploy → Manage deployments → Edit → New version</td></tr>
+<tr><td>Spam or joke entries</td><td>Nonsense rows</td><td>Excluded tab</td></tr>
+<tr><td>A column in All responses looks out of place</td><td>New question appears at the far right</td><td>Survey → Rebuild</td></tr>
+<tr><td>Sheet and Supabase counts differ</td><td>Different totals</td><td>Expected for the 3 October responses (Sheet only). From 26 Nov they should match.</td></tr>
+</table></div>
+
+<h2 id="change">12. Changing things safely</h2>
+<ul>
+<li><b>Question wording:</b> edit the <code>title</code> in <code>index.html</code> (search for the question’s id), then push. Safe.</li>
+<li><b>Never change an <code>id</code></b> on a live survey: it’s the column key in both Supabase and the Sheet.</li>
+<li><b>Don’t reword these answer options:</b> the code or the Sheet matches them exactly.
+  <ul>
+  <li>“Which is closest to you?” (picks the group)</li>
+  <li>“If that was gone, would you apply?” (shows a follow-up)</li>
+  <li>CGPA “Yes, and I know roughly what it is”</li>
+  <li>“No, this is news to me” and “I’d heard…” (findings table)</li>
+  <li>The contact and permission answers</li>
+  <li>“Yes, tell me when it launches”</li>
+  </ul></li>
+<li><b>Adding a question:</b> add it to the right list in <code>index.html</code>. To give it a nice Sheet heading, also add it to <code>QUESTIONS</code> in <code>setup/3-google-sheet-script.gs</code>, paste that into Apps Script, deploy a new version, then Survey → Rebuild.</li>
+<li><b>Going live:</b> commit and push to GitHub. Pages updates in about a minute.</li>
+</ul>
+
+<h2 id="design">13. Why it looks and reads this way</h2>
+<div class="grid2">
+<div class="card"><b>Shorter beats prettier.</b> In the research, length and mobile optimisation are the strongest drivers of drop-out. Written questions were trimmed and two became optional (family conversation, “describe an exchange student”).</div>
+<div class="card"><b>Tap over type.</b> Open text questions hurt mobile completion most, so most screens are taps. Written answers have a mic button.</div>
+<div class="card"><b>Thumb zone.</b> Answers are full-width rows at least 54px tall, above the roughly 1 cm minimum tap size. The main button is pinned to the bottom of the screen.</div>
+<div class="card"><b>No question counter.</b> Section names and a thin progress line. The research shows progress bars barely change completion, and jumpy ones hurt.</div>
+<div class="card"><b>Plain voice.</b> Short, direct “you” questions and contractions, with subtitles only where they add information.</div>
+<div class="card"><b>No anchoring.</b> The cost guess starts blank; the old slider started at ₹10 lakh and nudged every guess.</div>
+<div class="card"><b>The pitch comes last.</b> Seeing the product earlier would colour the research answers.</div>
+<div class="card"><b>One visual system.</b> Plnty’s hierarchy: neutral background, near-black Geist type, black pill buttons, one red accent. Factory’s small dotted labels and plain numbers.</div>
+<div class="card"><b>The ticket makes it a game.</b> A plain Google Form loses people; a ticket that moves towards “abroad”, plus a personal boarding pass at the end, gives a reason to finish and something worth sharing.</div>
+</div>
+<p class="muted">Sources: Couper &amp; Mavletova, meta-analysis of mobile web survey breakoffs (doi.org/10.5334/bar.f); meta-analysis of progress indicators (core.ac.uk/download/42630452.pdf); Pew Research Center, tips for mobile web surveys (2015); Nielsen Norman Group, touch target size; web.dev, form design basics; SurveyMonkey and Typeform survey-writing guidance (vendor sources, used for wording only).</p>
+
+<h2 id="questions">14. Every question, from the code</h2>
+<p class="muted">Generated from <code>index.html</code> on 26 Nov 2026. The ID is the column key in Supabase and the Sheet.</p>
+<h3>1 · Getting started (everyone)</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>welcome</code></td><td>Could you spend a semester studying abroad?</td><td>Welcome</td><td>–</td></tr><tr><td><code>q8_awareness</code></td><td>Before today, did you know IITR students can do a semester abroad?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q10_cost_guess</code></td><td>Guess: what does one semester abroad cost in total?</td><td>Amount</td><td>Yes</td></tr><tr><td><code>q12_confidence</code></td><td>How sure are you?</td><td>1–5</td><td>Yes</td></tr><tr><td><code>q11_cost_reasoning</code></td><td>How did you get that number?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q2_programme</code></td><td>Your programme</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q3_year</code></td><td>Your year</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q4_department</code></td><td>Your department</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q5_gender</code></td><td>Gender</td><td>Pick one</td><td>Optional</td></tr><tr><td><code>q7_family_situation</code></td><td>If your family faced a big one-time education cost, how would they manage?</td><td>Pick one</td><td>Optional</td></tr><tr><td><code>reveal_tier0</code></td><td>Here’s how others answered.</td><td>Comparison</td><td>–</td></tr></table></div><h3>2 · What you know (everyone)</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>q2pg_availability</code></td><td>Can PG students go abroad for a semester or research stay? <span class="muted">(only if: a.is_pg)</span></td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q2pg_detail</code></td><td>What do you know about that route? <span class="muted">(only if: a.is_pg &amp;&amp; a.q2pg_availability === 'I know PG has a different route')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>q9_name_university</code></td><td>Name one university IITR students can go to on exchange.</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q13_who_handles</code></td><td>Who handles exchange at IITR?</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q17_where_look</code></td><td>Where do you look, or would you look, for exchange info?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q14_cgpa_requirement</code></td><td>Is there a minimum CGPA to apply?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q14_detail</code></td><td>Roughly what CGPA? <span class="muted">(only if: a.q14_cgpa_requirement === 'Yes, and I know roughly what it is')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>q15_application_window</code></td><td>When do applications usually open?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q16_credits_count</code></td><td>Do credits from abroad count toward your IITR degree?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>reveal_tier1</code></td><td>That’s the guessing done.</td><td>Comparison</td><td>–</td></tr><tr><td><code>q18_category</code></td><td>Which is closest to you?</td><td>Pick one</td><td>Yes</td></tr></table></div><h3>3A · Your story: never applied</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>q19_unlikely_reason</code></td><td>What makes a semester abroad feel unlikely for you?</td><td>Written</td><td>Yes</td></tr><tr><td><code>q20_describe_exchange_student</code></td><td>Picture an IITR student who goes on exchange. What are they like?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q21_sounds_like_you</code></td><td>Is that you?</td><td>1–5</td><td>Yes</td></tr><tr><td><code>q22_barriers</code></td><td>What has held you back?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q23_biggest_barrier</code></td><td>Which one matters most?</td><td>Pick one (from previous)</td><td>Yes</td></tr><tr><td><code>q24_if_removed</code></td><td>If that was gone, would you apply?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q24_detail_probably</code></td><td>What else would stop you? <span class="muted">(only if: a.q24_if_removed === 'Probably, but something else would still be in the way')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>q24_detail_no</code></td><td>Why not? <span class="muted">(only if: a.q24_if_removed === 'No, I still wouldn’t')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>q25_suggested_by_someone</code></td><td>Has anyone ever told you, personally, to apply?</td><td>Pick one</td><td>Yes</td></tr></table></div><h3>3B · Your story: started, didn’t finish</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>b_intro</code></td><td>You got further than most. Where did it stop?</td><td>Info screen</td><td>–</td></tr><tr><td><code>q26_how_far</code></td><td>What did you actually do?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q27_moment_stopped</code></td><td>What made you stop? What was going on?</td><td>Written</td><td>Yes</td></tr><tr><td><code>q28_decision_or_fade</code></td><td>Did you decide, or did it fade?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q29_biggest_blocker</code></td><td>What was the biggest blocker?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q29_detail_other</code></td><td>What was it? <span class="muted">(only if: a.q29_biggest_blocker === 'Other')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>q30_hard_wall</code></td><td>Could better info or help have got you past it?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q31_info_search</code></td><td>When you looked for info, what happened?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q32_wrong_belief</code></td><td>Did you believe anything that turned out wrong?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q33_would_have_gone</code></td><td>Would you have gone if it was clearer?</td><td>1–5</td><td>Yes</td></tr><tr><td><code>q34_willing_to_talk</code></td><td>Could we call you for 20 minutes?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q34_contact</code></td><td>Phone or WhatsApp <span class="muted">(only if: a.q34_willing_to_talk === 'Yes')</span></td><td>Short text</td><td>Yes</td></tr></table></div><h3>3C · Your story: went / going</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>c_intro</code></td><td>You’re the rarest group here. Thank you.</td><td>Info screen</td><td>–</td></tr><tr><td><code>q35_university_country_term</code></td><td>Where and when did you go?</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q36_total_cost</code></td><td>What did it cost in total, in rupees?</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q37_cost_breakdown</code></td><td>Roughly how did that split?</td><td>Written</td><td>Yes</td></tr><tr><td><code>q38_blindsided_cost</code></td><td>Any cost that surprised you?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q39_funding</code></td><td>How did you pay for it?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q40_mapping_experience</code></td><td>How did course mapping go?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q41_mapping_story</code></td><td>What happened with mapping and DAPC?</td><td>Written</td><td>Yes</td></tr><tr><td><code>q42_wish_known</code></td><td>One thing you wish you’d known before going?</td><td>Written</td><td>Yes</td></tr><tr><td><code>q43_how_found_out</code></td><td>How did you first hear about exchange?</td><td>Short text</td><td>Yes</td></tr><tr><td><code>q44_would_redo</code></td><td>Would you go again?</td><td>1–5</td><td>Yes</td></tr><tr><td><code>q45_junior_contact</code></td><td>Can juniors contact you with questions?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q45_contact_detail</code></td><td>Phone, WhatsApp or email <span class="muted">(only if: a.q45_junior_contact === 'Yes, happy to')</span></td><td>Short text</td><td>Yes</td></tr></table></div><h3>4 · Wrapping up (everyone)</h3><div class="wrap"><table><tr><th>ID (Sheet/DB key)</th><th>Question</th><th>Type</th><th>Required</th></tr><tr><td><code>q46_conversation_at_home</code></td><td>Would going need a talk with your family? How would it go?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q47_how_find_opportunities</code></td><td>How do you usually hear about opportunities?</td><td>Pick any</td><td>Yes</td></tr><tr><td><code>q48_missed_too_late</code></td><td>Missed anything this year because you heard too late?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q49_apply_if</code></td><td>Finish this: “I’d apply if…”</td><td>Written</td><td>Yes</td></tr><tr><td><code>q50_single_page_usefulness</code></td><td>One page with real costs, universities, deadlines and seniors to ask. How useful?</td><td>1–5</td><td>Yes</td></tr><tr><td><code>q51_anything_else</code></td><td>Anything else?</td><td>Written</td><td>Optional</td></tr><tr><td><code>q52_contact_ok</code></td><td>Can we follow up with you?</td><td>Pick one</td><td>Yes</td></tr><tr><td><code>q52_contact_detail</code></td><td>Phone or WhatsApp <span class="muted">(only if: a.q52_contact_ok === 'Yes')</span></td><td>Short text</td><td>Yes</td></tr><tr><td><code>pitch_launch_notify</code></td><td>Here’s what we’re building.</td><td>Pitch + pick one</td><td>Yes</td></tr><tr><td><code>email_signup</code></td><td>Last one: your email</td><td>Short text</td><td>Yes</td></tr></table></div>
+</main>
+</body>
+</html>

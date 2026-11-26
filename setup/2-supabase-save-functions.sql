@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Exchange Reality Check: fix saving + readable views
 -- ============================================================================
--- Run this ONCE, after schema.sql, in Supabase: SQL Editor -> New query ->
+-- Run this ONCE, after 1-supabase-tables.sql, in Supabase: SQL Editor -> New query ->
 -- paste this whole file -> Run. Safe to run again later; it only creates
 -- or replaces things, it never deletes data.
 --

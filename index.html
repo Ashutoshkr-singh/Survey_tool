@@ -124,15 +124,27 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overflow-x: clip; /* the flying ticket and pass must never cause sideways scroll */
+  /* dot grid behind the card, so the ticket is the one solid thing on screen */
+  background-image: radial-gradient(circle, rgba(14,14,14,0.15) 1px, transparent 1.4px);
+  background-size: 22px 22px; background-attachment: fixed;
 }
+/* the dots near the pointer (or finger) darken, a quiet spotlight that follows you */
+.dot-glow {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .35s;
+  background-image: radial-gradient(circle, rgba(14,14,14,0.6) 1.3px, transparent 1.7px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(170px circle at var(--mx, 50%) var(--my, 50%), #000 0%, transparent 72%);
+  mask-image: radial-gradient(170px circle at var(--mx, 50%) var(--my, 50%), #000 0%, transparent 72%);
+}
+body.glow-on .dot-glow { opacity: 1; }
 button { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* ---- shell ---- */
-.app-root { min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
+.app-root { position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
 .app-shell { width: 100%; max-width: 560px; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 
-.app-header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: env(safe-area-inset-top); }
+.app-header { position: sticky; top: 0; z-index: 5; background: rgba(244,244,242,0.82); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); padding-top: env(safe-area-inset-top); }
 .header-row { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px; }
 .back-btn {
   width: 44px; height: 44px; border: 0; background: transparent; border-radius: 999px;
@@ -335,8 +347,10 @@ body.is-welcome .step-subtitle { margin-top: 16px; font-size: 18px; }
 .pass-grid b { display: block; margin-top: 4px; font: 600 15px/1.2 var(--sans); letter-spacing: -0.01em; text-transform: none; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pass-status { color: var(--accent) !important; }
 .pass-foot { padding: 16px 20px 20px; }
-.barcode { display: flex; align-items: stretch; justify-content: space-between; height: 34px; gap: 1.5px; overflow: hidden; }
-.barcode i { display: block; background: var(--ink); border-radius: 0.5px; }
+.barcode { display: flex; align-items: stretch; height: 56px; }
+.barcode i { display: block; min-width: 0; }
+.barcode i.k { background: var(--ink); }
+.barcode-num { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 8px; text-align: center; letter-spacing: 0.18em; margin-top: 6px; font: 500 11px/1 var(--mono); color: var(--ink-2); letter-spacing: 0.02em; }
 .end-stage { padding-bottom: 8px; }
 .end-copy { margin-top: 26px; padding: 0 4px; }
 .end-copy .step-title { font-size: clamp(24px, 6.5vw, 30px); }
@@ -1707,17 +1721,27 @@ function gateCode() {
   return letters.slice(0, 3) || 'TBD';
 }
 function buildBarcode() {
+  // Looks like a printed retail barcode: guard bars at both ends, bars and
+  // gaps of 1-4 widths, all made from the session ID so every pass differs.
+  const wrap = el('div');
   const bar = el('div', 'barcode');
-  const raw = session.session_id.replace(/-/g, '');
-  const hex = raw + raw.split('').reverse().join('');
+  const add = (w, black) => { const i = document.createElement('i'); if (black) i.className = 'k'; i.style.flex = w + ' 0 0'; bar.appendChild(i); };
+  const guard = () => { add(1, true); add(1, false); add(1, true); };
+  const hex = session.session_id.replace(/-/g, '');
+  guard(); add(1, false);
   for (let i = 0; i < hex.length; i++) {
     const v = parseInt(hex[i], 16);
-    const b = document.createElement('i');
-    b.style.width = (1 + (v % 3)) + 'px';
-    b.style.opacity = v % 5 === 0 ? '0' : '1';
-    bar.appendChild(b);
+    add((v % 4) + 1, true);
+    add(((v >> 2) % 3) + 1, false);
+    if (i === 15) { add(1, false); guard(); add(1, false); } // centre guard, like EAN
   }
-  return bar;
+  guard();
+  wrap.appendChild(bar);
+  const digits = hex.replace(/[^0-9]/g, '').padEnd(12, '7').slice(0, 12);
+  const num = el('div', 'barcode-num');
+  [digits[0], digits.slice(1, 6), digits.slice(6, 11), digits[11]].forEach(d => num.appendChild(el('span', null, d)));
+  wrap.appendChild(num);
+  return wrap;
 }
 
 // The boarding pass as an image, for stories and WhatsApp. The image library
@@ -1790,6 +1814,26 @@ async function maybeReflect(step, answerText) {
 /* ============================================================================
    10. BOOT
    ========================================================================== */
+// Dot-grid spotlight: follows the mouse; on phones it lights up where you touch, then fades.
+(function dotGlow() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const g = el('div', 'dot-glow');
+  document.body.prepend(g);
+  let raf = 0, fade = 0;
+  const move = (x, y, touch) => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      g.style.setProperty('--mx', x + 'px'); g.style.setProperty('--my', y + 'px');
+      document.body.classList.add('glow-on');
+    });
+    clearTimeout(fade);
+    if (touch) fade = setTimeout(() => document.body.classList.remove('glow-on'), 900);
+  };
+  addEventListener('pointermove', e => move(e.clientX, e.clientY, e.pointerType !== 'mouse'), { passive: true });
+  addEventListener('pointerdown', e => move(e.clientX, e.clientY, e.pointerType !== 'mouse'), { passive: true });
+  document.documentElement.addEventListener('mouseleave', () => document.body.classList.remove('glow-on'));
+})();
+
 (function boot() {
   if (!isConfigured.supabase && !isConfigured.sheets) {
     const banner = document.getElementById('devBanner');

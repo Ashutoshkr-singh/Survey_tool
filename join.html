@@ -7,7 +7,7 @@
 <meta name="description" content="One place for IIT Roorkee students to see which partner universities they could get, what a semester abroad really costs, and which courses get approved. Join the waitlist.">
 <meta property="og:title" content="Sem Exchange: your semester abroad, without the guesswork">
 <meta property="og:description" content="Which partner university could you get? What does it really cost? Join the waitlist.">
-<meta name="theme-color" content="#F4F4F2">
+<meta name="theme-color" content="#EFEAE1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
@@ -22,14 +22,14 @@
 <style>
 :root {
   color-scheme: light;
-  --bg: #F4F4F2;
-  --surface: #FFFFFF;
-  --ink: #0E0E0E;
-  --ink-2: #5E5E5E;
-  --ink-3: #8F8F8F;
-  --line: #E3E3E0;
+  --bg: #EFEAE1;
+  --surface: #FAF7F1;
+  --ink: #1F1C18;
+  --ink-2: #5F584E;
+  --ink-3: #948B7E;
+  --line: #E4DDD1;
   --red: #B23A2E;
-  --dark: #0E0E0E;
+  --dark: #1F1C18;
   --ok: #2F7A4F;
   --radius: 14px;
   --sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -42,13 +42,13 @@ a { color: inherit; }
 .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
 
 /* top bar */
-.top { position: sticky; top: 0; z-index: 10; background: rgba(244,244,242,0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+.top { position: sticky; top: 0; z-index: 10; background: rgba(239,234,225,0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid transparent; transition: border-color .2s; }
 .top.scrolled { border-bottom-color: var(--line); }
 .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
 .brand { font-weight: 600; font-size: 18px; letter-spacing: -0.03em; text-decoration: none; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 999px; font: 500 15px/1 var(--sans); padding: 12px 18px; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .btn-dark { background: var(--ink); color: #fff; }
-.btn-dark:hover { background: #2A2A2A; }
+.btn-dark:hover { background: #36312A; }
 .btn-small { padding: 9px 14px; font-size: 14px; }
 .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
 .btn-ghost:hover { background: rgba(0,0,0,0.04); }
@@ -107,7 +107,7 @@ section.block { padding-top: 72px; padding-bottom: 8px; }
 /* product preview: one clean dashboard, then three phone screens */
 .window { margin-top: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: 0 40px 90px -30px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.04); }
 .win-bar { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line); }
-.win-bar > span { width: 10px; height: 10px; border-radius: 50%; background: #E6E6E2; }
+.win-bar > span { width: 10px; height: 10px; border-radius: 50%; background: #E2DACB; }
 .win-url { margin: 0 auto; font: 500 12px var(--sans); color: var(--ink-3); }
 .win-tag { font: 500 10.5px var(--mono); font-style: normal; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
 .app { display: grid; grid-template-columns: 176px 1fr 236px; min-height: 360px; text-align: left; font-size: 14px; }
@@ -150,7 +150,7 @@ section.block { padding-top: 72px; padding-bottom: 8px; }
 .phones { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .phone { background: var(--surface); border: 1px solid var(--line); border-radius: 30px; padding: 10px; box-shadow: 0 30px 60px -30px rgba(0,0,0,0.16); }
 .phone-screen { border-radius: 22px; background: var(--bg); padding: 14px 16px 20px; min-height: 330px; text-align: left; font-size: 13.5px; }
-.notch { width: 64px; height: 6px; border-radius: 6px; background: #E0E0DC; margin: 0 auto 18px; }
+.notch { width: 64px; height: 6px; border-radius: 6px; background: #DCD3C4; margin: 0 auto 18px; }
 .phone h4 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
 .phone .lbl { margin-top: 2px; font-size: 12px; color: var(--ink-3); }
 .card-list { margin-top: 14px; background: var(--surface); border-radius: 14px; }
@@ -161,7 +161,7 @@ section.block { padding-top: 72px; padding-bottom: 8px; }
 .badge { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; color: #fff; background: var(--ok); }
 .badge.part { background: #C98A00; }
 .avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; font: 600 11px var(--sans); }
-.avatar.b { background: #5E5E5E; } .avatar.c { background: #A3A3A0; }
+.avatar.b { background: #5F584E; } .avatar.c { background: #A89F92; }
 .go { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); color: var(--ink-2); }
 .go .ic { width: 13px; height: 13px; }
 .ring { position: relative; width: 150px; height: 150px; margin: 22px auto 0; }
@@ -196,7 +196,7 @@ section.block { padding-top: 72px; padding-bottom: 8px; }
 .final .join .note { color: rgba(255,255,255,0.55); }
 .final .join .msg { color: #FFB4A8; }
 .final .joined { color: var(--ink); }
-.final .btn-dark:hover { background: #2A2A2A; }
+.final .btn-dark:hover { background: #36312A; }
 .count { margin-top: 18px; font: 500 13px var(--mono); color: rgba(255,255,255,0.65); }
 
 .survey-link { margin-top: 26px; text-align: center; font-size: 15px; color: var(--ink-2); }
@@ -328,8 +328,8 @@ footer { padding: 40px 0 48px; color: var(--ink-3); font-size: 13px; text-align:
         <aside class="app-side">
           <h5>Real cost · University A</h5>
           <div class="big">₹3.8L <small>/ semester</small></div>
-          <div class="stack"><i style="--w:42%;--c:#0E0E0E"></i><i style="--w:21%;--c:#5E5E5E"></i><i style="--w:18%;--c:#8F8F8F"></i><i style="--w:11%;--c:#BDBDBA"></i><i style="--w:8%;--c:#DADAD6"></i></div>
-          <ul class="legend"><li><i style="--c:#0E0E0E"></i>Rent<b>₹1.6L</b></li><li><i style="--c:#5E5E5E"></i>Food<b>₹0.8L</b></li><li><i style="--c:#8F8F8F"></i>Flights<b>₹0.7L</b></li><li><i style="--c:#BDBDBA"></i>Visa<b>₹0.4L</b></li><li><i style="--c:#DADAD6"></i>Other<b>₹0.3L</b></li></ul>
+          <div class="stack"><i style="--w:42%;--c:#1F1C18"></i><i style="--w:21%;--c:#5F584E"></i><i style="--w:18%;--c:#948B7E"></i><i style="--w:11%;--c:#BFB6A8"></i><i style="--w:8%;--c:#DCD3C4"></i></div>
+          <ul class="legend"><li><i style="--c:#1F1C18"></i>Rent<b>₹1.6L</b></li><li><i style="--c:#5F584E"></i>Food<b>₹0.8L</b></li><li><i style="--c:#948B7E"></i>Flights<b>₹0.7L</b></li><li><i style="--c:#BFB6A8"></i>Visa<b>₹0.4L</b></li><li><i style="--c:#DCD3C4"></i>Other<b>₹0.3L</b></li></ul>
         </aside>
       </div>
     </div>
@@ -356,7 +356,7 @@ footer { padding: 40px 0 48px; color: var(--ink-3); font-size: 13px; text-align:
       <div class="phone"><div class="phone-screen">
         <div class="notch"></div>
         <h4>Next deadline</h4><div class="lbl">University A</div>
-        <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#E3E3E0" stroke-width="7"/><circle cx="60" cy="60" r="52" fill="none" stroke="#0E0E0E" stroke-width="7" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="100"/></svg><div><b>12</b><small>days left</small></div></div>
+        <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#E4DDD1" stroke-width="7"/><circle cx="60" cy="60" r="52" fill="none" stroke="#1F1C18" stroke-width="7" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="100"/></svg><div><b>12</b><small>days left</small></div></div>
         <div class="ring-cap">Apply to IR<small>Step 2 of 5</small></div>
         <div class="segs"><i class="d"></i><i class="n"></i><i></i><i></i><i></i></div>
       </div></div>

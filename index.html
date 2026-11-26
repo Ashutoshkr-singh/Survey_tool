@@ -100,13 +100,13 @@
    ========================================================================== */
 :root {
   color-scheme: light;
-  --bg: #F4F4F2;
-  --surface: #FFFFFF;
-  --ink: #0E0E0E;
-  --ink-2: #5E5E5E;
-  --ink-3: #8F8F8F;
-  --line: #E3E3E0;
-  --line-strong: #CFCFCB;
+  --bg: #EFEAE1;
+  --surface: #FAF7F1;
+  --ink: #1F1C18;
+  --ink-2: #5F584E;
+  --ink-3: #948B7E;
+  --line: #E4DDD1;
+  --line-strong: #CFC6B7;
   --accent: #B23A2E;
   --ok: #2F7A4F;
   --radius: 14px;
@@ -125,13 +125,13 @@ body {
   -webkit-tap-highlight-color: transparent;
   overflow-x: clip; /* the flying ticket and pass must never cause sideways scroll */
   /* dot grid behind the card, so the ticket is the one solid thing on screen */
-  background-image: radial-gradient(circle, rgba(14,14,14,0.15) 1px, transparent 1.4px);
+  background-image: radial-gradient(circle, rgba(70,55,35,0.17) 1px, transparent 1.4px);
   background-size: 22px 22px; background-attachment: fixed;
 }
 /* the dots near the pointer (or finger) darken, a quiet spotlight that follows you */
 .dot-glow {
   position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .35s;
-  background-image: radial-gradient(circle, rgba(14,14,14,0.6) 1.3px, transparent 1.7px);
+  background-image: radial-gradient(circle, rgba(70,55,35,0.6) 1.3px, transparent 1.7px);
   background-size: 22px 22px;
   -webkit-mask-image: radial-gradient(170px circle at var(--mx, 50%) var(--my, 50%), #000 0%, transparent 72%);
   mask-image: radial-gradient(170px circle at var(--mx, 50%) var(--my, 50%), #000 0%, transparent 72%);
@@ -144,7 +144,7 @@ button { font: inherit; color: inherit; }
 .app-root { position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
 .app-shell { width: 100%; max-width: 560px; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 
-.app-header { position: sticky; top: 0; z-index: 5; background: rgba(244,244,242,0.82); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); padding-top: env(safe-area-inset-top); }
+.app-header { position: sticky; top: 0; z-index: 5; background: rgba(239,234,225,0.82); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); padding-top: env(safe-area-inset-top); }
 .header-row { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px; }
 .back-btn {
   width: 44px; height: 44px; border: 0; background: transparent; border-radius: 999px;
@@ -279,7 +279,7 @@ body.is-welcome .step-subtitle { margin-top: 16px; font-size: 18px; }
 .action-row {
   position: sticky; bottom: 0; z-index: 4; display: flex; gap: 10px;
   margin-top: auto; padding: 24px 0 calc(16px + env(safe-area-inset-bottom));
-  background: linear-gradient(to bottom, rgba(255,255,255,0), var(--surface) 40%);
+  background: linear-gradient(to bottom, rgba(250,247,241,0), var(--surface) 40%);
   border-radius: 0 0 22px 22px;
 }
 .btn {
@@ -288,7 +288,7 @@ body.is-welcome .step-subtitle { margin-top: 16px; font-size: 18px; }
   font: 500 17px var(--sans); cursor: pointer; transition: background .15s, opacity .15s;
 }
 .btn-primary { background: var(--ink); color: #fff; }
-.btn-primary:hover { background: #2A2A2A; }
+.btn-primary:hover { background: #36312A; }
 .btn-primary:disabled { opacity: 0.25; cursor: default; }
 .btn-ghost { background: transparent; border-color: var(--ink); color: var(--ink); }
 .btn-full { flex: 1; }
@@ -1761,7 +1761,7 @@ async function sharePass(node, btn) {
   try {
     const h2c = await loadHtml2Canvas();
     node.classList.remove('fly-in');
-    const canvas = await h2c(node, { backgroundColor: '#F4F4F2', scale: 2 });
+    const canvas = await h2c(node, { backgroundColor: '#EFEAE1', scale: 2 });
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
     const file = new File([blob], 'boarding-pass.png', { type: 'image/png' });
     const url = location.origin + location.pathname;
